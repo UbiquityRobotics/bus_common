@@ -19,7 +19,7 @@ AVR_UART *host_uart = &avr_uart0;
 Bus_Slave bus_slave((UART *)bus_uart, (UART *)host_uart);
 
 // The two PID set points are defined here:
-Bus_Motor_Encoder leftPID, rightPID;
+Bus_Motor_Encoder left_motor_encoder, right_motor_encoder;
 
 // Set the *LED* to the value of *led*:
 void led_set(Logical led) {
@@ -57,24 +57,23 @@ void pid_update() {
 
   if (is_moving) {
     // Read the encoders:
-    leftPID._encoder = bus_slave.command_integer_get(address, 2);
-    rightPID._encoder = bus_slave.command_integer_get(address, 4);
+    left_motor_encoder.encoder_set(bus_slave.command_integer_get(address, 2));
+    right_motor_encoder.encoder_set(bus_slave.command_integer_get(address, 4));
   
     // Do the PID for each motor:
     //debug_uart->string_print((Text)"+");
-    rightPID.do_pid();
-    leftPID.do_pid();
+    right_motor_encoder.do_pid();
+    left_motor_encoder.do_pid();
 
     /* Set the motor speeds accordingly */
     //debug_uart->string_print((Text)" l=");
-    //debug_uart->integer_print((UInteger)leftPID.output);
+    //debug_uart->integer_print((UInteger)left_motor_encoder.output);
     //debug_uart->string_print((Text)" r=");
-    //debug_uart->integer_print((UInteger)rightPID.output);
+    //debug_uart->integer_print((UInteger)right_motor_encoder.output);
     //debug_uart->string_print((Text)"\r\n");
 
-    Byte left_speed = (Byte)leftPID._output;
-    Byte right_speed = (Byte)rightPID._output;
-    
+    Byte left_speed = (Byte)left_motor_encoder.output_get();
+    Byte right_speed = (Byte)right_motor_encoder.output_get();
 
     if (left_speed != last_left_speed) {
         bus_slave.command_byte_put(address,  9, left_speed);
@@ -89,7 +88,7 @@ void pid_update() {
 
     is_moving = (Logical)(left_speed != 0) || (right_speed != 0);
 
-    //motor_speeds_set((Byte)leftPID.output, (Byte)rightPID.output);
+    //motor_speeds_set((Byte)left_motor_encoder.output, (Byte)right_motor_encoder.output);
   } else {
     //debug_uart->string_print((Text)"-");
 
@@ -99,9 +98,9 @@ void pid_update() {
     // PrevInput is considered a good proxy to detect
     // whether reset has already happened
 
-    if (leftPID._previous_input != 0 || rightPID._previous_input != 0) {
-      leftPID.reset();
-      rightPID.reset();
+    if (!left_motor_encoder.is_reset() || !right_motor_encoder.is_reset()) {
+      left_motor_encoder.reset();
+      right_motor_encoder.reset();
     }
   }
 }
@@ -390,8 +389,8 @@ void bridge_loop(UByte test) {
 	    }
 	    case 'm': {
 	      // Set motor speeds ("m left, right"):
-	      Byte left_speed = (Byte)arguments[0];
-	      Byte right_speed = (Byte)arguments[1];
+	      Integer left_speed = arguments[0];
+	      Integer right_speed = arguments[1];
 	      
 	      //bus.command_byte_put(address, 9, left_speed);
 	      //Byte xleft_speed = bus.command_byte_get(address, 8);
@@ -415,8 +414,8 @@ void bridge_loop(UByte test) {
 	      // For PID code:
 	      is_moving = (Logical)(left_speed != 0 || right_speed != 0);
 	      if (is_moving) {
-		leftPID._target_ticks_per_frame = left_speed;
-		rightPID._target_ticks_per_frame = right_speed;
+		left_motor_encoder.target_ticks_per_frame_set(left_speed);
+		right_motor_encoder.target_ticks_per_frame_set(right_speed);
 	      } else {
 	        motor_speeds_set(0, 0);
 	      }
@@ -436,24 +435,24 @@ void bridge_loop(UByte test) {
 	    }
 	    case 'u': {
 	      // Update PID constants ("U Kp Kd Ki Ko");
-	      leftPID.proportional_set(arguments[0]);
-	      leftPID.derivative_set(arguments[1]);
-	      leftPID.integral_set(arguments[2]);
-	      leftPID.denominator_set(arguments[3]);
-	      rightPID.proportional_set(arguments[0]);
-	      rightPID.derivative_set(arguments[1]);
-	      rightPID.integral_set(arguments[2]);
-	      rightPID.denominator_set(arguments[3]);
+	      left_motor_encoder.proportional_set(arguments[0]);
+	      left_motor_encoder.derivative_set(arguments[1]);
+	      left_motor_encoder.integral_set(arguments[2]);
+	      left_motor_encoder.denominator_set(arguments[3]);
+	      right_motor_encoder.proportional_set(arguments[0]);
+	      right_motor_encoder.derivative_set(arguments[1]);
+	      right_motor_encoder.integral_set(arguments[2]);
+	      right_motor_encoder.denominator_set(arguments[3]);
 	      host_uart->string_print((Text)"OK\r\n");
 
 	      // For debugging:
-	      debug_uart->integer_print(leftPID.proportional_get());
+	      debug_uart->integer_print(left_motor_encoder.proportional_get());
 	      host_uart->string_print((Text)" ");
-	      debug_uart->integer_print(leftPID.derivative_get());
+	      debug_uart->integer_print(left_motor_encoder.derivative_get());
 	      host_uart->string_print((Text)" ");
-	      debug_uart->integer_print(leftPID.integral_get());
+	      debug_uart->integer_print(left_motor_encoder.integral_get());
 	      host_uart->string_print((Text)" ");
-	      debug_uart->integer_print(leftPID.denominator_get());
+	      debug_uart->integer_print(left_motor_encoder.denominator_get());
 
 	      // Print the usual "OK" result:
 	      host_uart->string_print((Text)"OK\r\n");

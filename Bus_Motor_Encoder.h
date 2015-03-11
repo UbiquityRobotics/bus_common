@@ -8,11 +8,12 @@ class Bus_Motor_Encoder {
   Bus_Motor_Encoder();
   void reset();
   void do_pid();
-  Short proportional_get() {
-    return _proportional;
+
+  Short denominator_get() {
+    return _denominator;
   };
-  void proportional_set(Short proportional) {
-    _proportional = proportional;
+  void denominator_set(Short denominator) {
+    _denominator = denominator;
   };
 
   Short derivative_get() {
@@ -22,6 +23,10 @@ class Bus_Motor_Encoder {
     _derivative = derivative;
   };
 
+  void encoder_set(Integer encoder) {
+    _encoder = encoder;
+  };
+  
   Short integral_get() {
     return _integral;
   };
@@ -29,14 +34,29 @@ class Bus_Motor_Encoder {
     _integral = integral;
   };
 
-  Short denominator_get() {
-    return _denominator;
+  Logical is_reset() {
+    return (Logical)(_previous_input == 0);
+  }
+
+  Integer output_get() {
+    return _output;
   };
-  void denominator_set(Short denominator) {
-    _denominator = denominator;
+  void output_set(Integer output) {
+    _output = output;
   };
 
-  // private:
+  Short proportional_get() {
+    return _proportional;
+  };
+  void proportional_set(Short proportional) {
+    _proportional = proportional;
+  };
+
+  void target_ticks_per_frame_set(Integer speed) {
+    _target_ticks_per_frame = (Double)speed;
+  };
+
+ private:
   static const Integer _maximum_pwm = 127;
   Short _proportional;	// PID Proportional constant
   Short _derivative;	// PID Differential constant
@@ -47,13 +67,17 @@ class Bus_Motor_Encoder {
   Integer _encoder;			// encoder count
   Integer _previous_encoder;		// last encoder count
 
-  // Using previous input (PrevInput) instead of PrevError to avoid derivative kick,
-  // see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
+  // Using previous input (_prev_input) instead of PrevError to avoid
+  // derivative kick.  See:
+  //
+  //    http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
+
   Short _previous_input;		// last input
 
   // Using integrated term (ITerm) instead of integrated error (Ierror),
-  // to allow tuning changes,
-  // see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
+  // to allow tuning changes.  See:
+  //
+  //    http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
 
   Short _integral_term;			// integral term
 
