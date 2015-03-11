@@ -8,40 +8,40 @@ class Bus_Motor_Encoder {
   Bus_Motor_Encoder();
   void reset();
   void do_pid();
-  static const Byte MAX_PWM = 127;
   Short proportional_get() {
-    return _Kp;
+    return _proportional;
   };
   void proportional_set(Short proportional) {
-    _Kp = proportional;
+    _proportional = proportional;
   };
 
   Short derivative_get() {
-    return _Kd;
+    return _derivative;
   };
   void derivative_set(Short derivative) {
-    _Kd = derivative;
+    _derivative = derivative;
   };
 
   Short integral_get() {
-    return _Ki;
+    return _integral;
   };
   void integral_set(Short integral) {
-    _Ki = integral;
+    _integral = integral;
   };
 
   Short denominator_get() {
-    return _Ko;
+    return _denominator;
   };
   void denominator_set(Short denominator) {
-    _Ko = denominator;
+    _denominator = denominator;
   };
 
   // private:
-  Short _Kp;	// PID Proportional Constant
-  Short _Kd;	// PID Differential Constant
-  Short _Ki;	// PID Integal Constant
-  Short _Ko;	// PID common denOminator 
+  static const Integer _maximum_pwm = 127;
+  Short _proportional;	// PID Proportional constant
+  Short _derivative;	// PID Differential constant
+  Short _integral;	// PID Integal constant
+  Short _denominator;	// PID common denominator 
 
   Double _target_ticks_per_frame;	// target speed in ticks per frame
   Integer _encoder;			// encoder count
@@ -55,7 +55,7 @@ class Bus_Motor_Encoder {
   // to allow tuning changes,
   // see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
 
-  Short _integral_term;			//integrated term
+  Short _integral_term;			// integral term
 
   Integer _output;			// last motor setting
 };

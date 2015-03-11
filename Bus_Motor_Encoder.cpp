@@ -4,10 +4,11 @@
 #include <Bus_Motor_Encoder.h>
 
 Bus_Motor_Encoder::Bus_Motor_Encoder() {
-  _Kp = 20;	// PID Proportional Constant
-  _Kd = 12;	// PID Differential Constant
-  _Ki = 0;	// PID Integal Constant
-  _Ko = 50;	// PID common denOminator 
+  _encoder = 0;
+  _proportional = 20;
+  _derivative = 12;
+  _integral = 0;
+  _denominator = 50;
   reset();
 }
 
@@ -21,35 +22,29 @@ void Bus_Motor_Encoder::reset() {
 }
 
 void Bus_Motor_Encoder::do_pid() {
-  Integer Perror;
-  Integer output;
-  Short input;
-
   //Perror = pid->TargetTicksPerFrame - (pid->Encoder - pid->PrevEnc);
-  input = _encoder - _previous_encoder;
-  Perror = _target_ticks_per_frame - input;
+  Short input = _encoder - _previous_encoder;
+  Integer Perror = _target_ticks_per_frame - input;
 
   // Avoid derivative kick and allow tuning changes, see:
   //
   //   http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
   //   http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
 
-  //output =
-  // (Kp * Perror + Kd * (Perror - pid->PrevErr) + Ki * pid->Ierror) / Ko;
-  // p->PrevErr = Perror;
-  output = (_Kp * Perror - _Kd * (input - _previous_input) + _integral_term) / _Ko;
+  Integer output = (_proportional * Perror -
+     _derivative * (input - _previous_input) + _integral_term) / _denominator;
   _previous_encoder = _encoder;
 
   output += _output;
   // Accumulate Integral error *or* Limit output.
   // Stop accumulating when output saturates
-  if (output >= MAX_PWM)
-    output = MAX_PWM;
-  else if (output <= -MAX_PWM)
-    output = -MAX_PWM;
+  if (output >= _maximum_pwm)
+    output = _maximum_pwm;
+  else if (output <= -_maximum_pwm)
+    output = -_maximum_pwm;
   else
     // allow turning changes, see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
-   _integral_term += _Ki * Perror;
+   _integral_term += _integral * Perror;
 
   _output = output;
   _previous_input = input;
