@@ -3,34 +3,26 @@
 #ifndef BUS_MOTOR_ENCODER_H_INCLUDED
 #define BUS_MOTOR_ENCODER_H_INCLUDED 1
 
-class Motor_Encoder {
- public:
-  Motor_Encoder();
-  void reset();
-  void do_pid();
-
-  Short Kp;	// PID Proportional Constant
-  Short Kd;	// PID Differential Constant
-  Short Ki;	// PID Integal Constant
-  Short Ko;	// PID common denOminator 
-  static const Byte MAX_PWM = 127;
-
-  Logical is_moving;
-  Double TargetTicksPerFrame;	// target speed in ticks per frame
-  Integer Encoder;		// encoder count
-  Integer PrevEnc;		// last encoder count
+typedef struct {
+  Double _target_ticks_per_frame;	// target speed in ticks per frame
+  Integer _encoder;			// encoder count
+  Integer _previous_encoder;		// last encoder count
 
   // Using previous input (PrevInput) instead of PrevError to avoid derivative kick,
   // see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
-  Short PrevInput;		// last input
+  Short _previous_input;		// last input
 
   // Using integrated term (ITerm) instead of integrated error (Ierror),
   // to allow tuning changes,
   // see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
 
-  Short ITerm;			//integrated term
+  Short _integral_term;			//integrated term
 
-  Integer output;		// last motor setting
-};
+  Integer _output;			// last motor setting
+} SetPointInfo;
+
+void motor_speeds_set(Byte left_speed, Byte right_speed);
+void pid_reset(SetPointInfo *pid);
+
 
 #endif //BUS_MOTOR_ENCODER_H_INCLUDED

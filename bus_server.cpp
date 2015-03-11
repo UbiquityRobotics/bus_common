@@ -57,16 +57,6 @@ void motor_speeds_set(Byte left_speed, Byte right_speed) {
     bus_slave.flush();
 }
 
-void pid_reset(SetPointInfo *pid){
-   pid->_target_ticks_per_frame = 0.0;
-   // Leave *encoder* field alone:
-   //pid->Encoder = 0;
-   pid->_previous_encoder = leftPID._encoder;
-   pid->_output = 0;
-   pid->_previous_input = 0;
-   pid->_integral_term = 0;
-}
-
 void do_pid(SetPointInfo *pid) {
   Integer Perror;
   Integer output;
