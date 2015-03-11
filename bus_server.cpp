@@ -19,7 +19,7 @@ AVR_UART *host_uart = &avr_uart0;
 Bus_Slave bus_slave((UART *)bus_uart, (UART *)host_uart);
 
 // The two PID set points are defined here:
-SetPointInfo leftPID, rightPID;
+Bus_Motor_Encoder leftPID, rightPID;
 
 // Set the *LED* to the value of *led*:
 void led_set(Logical led) {
@@ -41,12 +41,6 @@ void led_blink(UShort on, UShort off) {
 
 static UByte address = 33;
 
-static Short Kp = 20;	// PID Proportional Constant
-static Short Kd = 12;	// PID Differential Constant
-static Short Ki = 0;	// PID Integal Constant
-static Short Ko = 50;	// PID common denOminator 
-static Byte const MAX_PWM = 127;
-
 static Logical is_moving = (Logical)0;
 
 void motor_speeds_set(Byte left_speed, Byte right_speed) {
@@ -55,41 +49,6 @@ void motor_speeds_set(Byte left_speed, Byte right_speed) {
     bus_slave.flush();
     bus_slave.command_byte_put(address, 11, right_speed);
     bus_slave.flush();
-}
-
-void do_pid(SetPointInfo *pid) {
-  Integer Perror;
-  Integer output;
-  Short input;
-
-  //Perror = pid->TargetTicksPerFrame - (pid->Encoder - pid->PrevEnc);
-  input = pid->_encoder - pid->_previous_encoder;
-  Perror = pid->_target_ticks_per_frame - input;
-
-  // Avoid derivative kick and allow tuning changes, see:
-  //
-  //   http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
-  //   http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
-
-  //output =
-  // (Kp * Perror + Kd * (Perror - pid->PrevErr) + Ki * pid->Ierror) / Ko;
-  // p->PrevErr = Perror;
-  output = (Kp * Perror - Kd * (input - pid->_previous_input) + pid->_integral_term) / Ko;
-  pid->_previous_encoder = pid->_encoder;
-
-  output += pid->_output;
-  // Accumulate Integral error *or* Limit output.
-  // Stop accumulating when output saturates
-  if (output >= MAX_PWM)
-    output = MAX_PWM;
-  else if (output <= -MAX_PWM)
-    output = -MAX_PWM;
-  else
-    // allow turning changes, see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
-    pid->_integral_term += Ki * Perror;
-
-  pid->_output = output;
-  pid->_previous_input = input;
 }
 
 void pid_update() {
@@ -103,8 +62,8 @@ void pid_update() {
   
     // Do the PID for each motor:
     //debug_uart->string_print((Text)"+");
-    do_pid(&rightPID);
-    do_pid(&leftPID);
+    rightPID.do_pid();
+    leftPID.do_pid();
 
     /* Set the motor speeds accordingly */
     //debug_uart->string_print((Text)" l=");
@@ -141,8 +100,8 @@ void pid_update() {
     // whether reset has already happened
 
     if (leftPID._previous_input != 0 || rightPID._previous_input != 0) {
-	pid_reset(&leftPID);
-	pid_reset(&rightPID);
+      leftPID.reset();
+      rightPID.reset();
     }
   }
 }
@@ -477,20 +436,24 @@ void bridge_loop(UByte test) {
 	    }
 	    case 'u': {
 	      // Update PID constants ("U Kp Kd Ki Ko");
-	      Kp = arguments[0];
-	      Kd = arguments[1];
-	      Ki = arguments[2];
-	      Ko = arguments[3];
+	      leftPID.proportional_set(arguments[0]);
+	      leftPID.derivative_set(arguments[1]);
+	      leftPID.integral_set(arguments[2]);
+	      leftPID.denominator_set(arguments[3]);
+	      rightPID.proportional_set(arguments[0]);
+	      rightPID.derivative_set(arguments[1]);
+	      rightPID.integral_set(arguments[2]);
+	      rightPID.denominator_set(arguments[3]);
 	      host_uart->string_print((Text)"OK\r\n");
 
 	      // For debugging:
-	      debug_uart->integer_print(Kp);
+	      debug_uart->integer_print(leftPID.proportional_get());
 	      host_uart->string_print((Text)" ");
-	      debug_uart->integer_print(Kd);
+	      debug_uart->integer_print(leftPID.derivative_get());
 	      host_uart->string_print((Text)" ");
-	      debug_uart->integer_print(Ki);
+	      debug_uart->integer_print(leftPID.integral_get());
 	      host_uart->string_print((Text)" ");
-	      debug_uart->integer_print(Ko);
+	      debug_uart->integer_print(leftPID.denominator_get());
 
 	      // Print the usual "OK" result:
 	      host_uart->string_print((Text)"OK\r\n");

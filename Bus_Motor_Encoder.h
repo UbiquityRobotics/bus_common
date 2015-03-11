@@ -3,7 +3,46 @@
 #ifndef BUS_MOTOR_ENCODER_H_INCLUDED
 #define BUS_MOTOR_ENCODER_H_INCLUDED 1
 
-typedef struct {
+class Bus_Motor_Encoder {
+ public:
+  Bus_Motor_Encoder();
+  void reset();
+  void do_pid();
+  static const Byte MAX_PWM = 127;
+  Short proportional_get() {
+    return _Kp;
+  };
+  void proportional_set(Short proportional) {
+    _Kp = proportional;
+  };
+
+  Short derivative_get() {
+    return _Kd;
+  };
+  void derivative_set(Short derivative) {
+    _Kd = derivative;
+  };
+
+  Short integral_get() {
+    return _Ki;
+  };
+  void integral_set(Short integral) {
+    _Ki = integral;
+  };
+
+  Short denominator_get() {
+    return _Ko;
+  };
+  void denominator_set(Short denominator) {
+    _Ko = denominator;
+  };
+
+  // private:
+  Short _Kp;	// PID Proportional Constant
+  Short _Kd;	// PID Differential Constant
+  Short _Ki;	// PID Integal Constant
+  Short _Ko;	// PID common denOminator 
+
   Double _target_ticks_per_frame;	// target speed in ticks per frame
   Integer _encoder;			// encoder count
   Integer _previous_encoder;		// last encoder count
@@ -19,10 +58,6 @@ typedef struct {
   Short _integral_term;			//integrated term
 
   Integer _output;			// last motor setting
-} SetPointInfo;
-
-void motor_speeds_set(Byte left_speed, Byte right_speed);
-void pid_reset(SetPointInfo *pid);
-
+};
 
 #endif //BUS_MOTOR_ENCODER_H_INCLUDED

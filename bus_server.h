@@ -36,7 +36,7 @@ extern Bus_Slave bus_slave;
 extern void motor_speeds_set(Byte left_speed, Byte right_speed);
 extern void led_set(Logical led);
 extern void led_blink(UShort on, UShort off);
-extern void do_pid(SetPointInfo *pid);
+extern void do_pid(Bus_Motor_Encoder *pid);
 extern void pid_update();
 extern void bridge_host_to_bus();
 extern void bridge_setup(UByte test);
