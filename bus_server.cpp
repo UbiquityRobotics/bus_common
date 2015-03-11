@@ -58,13 +58,13 @@ void motor_speeds_set(Byte left_speed, Byte right_speed) {
 }
 
 void pid_reset(SetPointInfo *pid){
-   pid->TargetTicksPerFrame = 0.0;
+   pid->_target_ticks_per_frame = 0.0;
    // Leave *encoder* field alone:
    //pid->Encoder = 0;
-   pid->PrevEnc = leftPID.Encoder;
-   pid->output = 0;
-   pid->PrevInput = 0;
-   pid->ITerm = 0;
+   pid->_previous_encoder = leftPID._encoder;
+   pid->_output = 0;
+   pid->_previous_input = 0;
+   pid->_integral_term = 0;
 }
 
 void do_pid(SetPointInfo *pid) {
@@ -73,8 +73,8 @@ void do_pid(SetPointInfo *pid) {
   Short input;
 
   //Perror = pid->TargetTicksPerFrame - (pid->Encoder - pid->PrevEnc);
-  input = pid->Encoder - pid->PrevEnc;
-  Perror = pid->TargetTicksPerFrame - input;
+  input = pid->_encoder - pid->_previous_encoder;
+  Perror = pid->_target_ticks_per_frame - input;
 
   // Avoid derivative kick and allow tuning changes, see:
   //
@@ -84,10 +84,10 @@ void do_pid(SetPointInfo *pid) {
   //output =
   // (Kp * Perror + Kd * (Perror - pid->PrevErr) + Ki * pid->Ierror) / Ko;
   // p->PrevErr = Perror;
-  output = (Kp * Perror - Kd * (input - pid->PrevInput) + pid->ITerm) / Ko;
-  pid->PrevEnc = pid->Encoder;
+  output = (Kp * Perror - Kd * (input - pid->_previous_input) + pid->_integral_term) / Ko;
+  pid->_previous_encoder = pid->_encoder;
 
-  output += pid->output;
+  output += pid->_output;
   // Accumulate Integral error *or* Limit output.
   // Stop accumulating when output saturates
   if (output >= MAX_PWM)
@@ -96,10 +96,10 @@ void do_pid(SetPointInfo *pid) {
     output = -MAX_PWM;
   else
     // allow turning changes, see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
-    pid->ITerm += Ki * Perror;
+    pid->_integral_term += Ki * Perror;
 
-  pid->output = output;
-  pid->PrevInput = input;
+  pid->_output = output;
+  pid->_previous_input = input;
 }
 
 void pid_update() {
@@ -108,8 +108,8 @@ void pid_update() {
 
   if (is_moving) {
     // Read the encoders:
-    leftPID.Encoder = bus_slave.command_integer_get(address, 2);
-    rightPID.Encoder = bus_slave.command_integer_get(address, 4);
+    leftPID._encoder = bus_slave.command_integer_get(address, 2);
+    rightPID._encoder = bus_slave.command_integer_get(address, 4);
   
     // Do the PID for each motor:
     //debug_uart->string_print((Text)"+");
@@ -123,8 +123,8 @@ void pid_update() {
     //debug_uart->integer_print((UInteger)rightPID.output);
     //debug_uart->string_print((Text)"\r\n");
 
-    Byte left_speed = (Byte)leftPID.output;
-    Byte right_speed = (Byte)rightPID.output;
+    Byte left_speed = (Byte)leftPID._output;
+    Byte right_speed = (Byte)rightPID._output;
     
 
     if (left_speed != last_left_speed) {
@@ -150,7 +150,7 @@ void pid_update() {
     // PrevInput is considered a good proxy to detect
     // whether reset has already happened
 
-    if (leftPID.PrevInput != 0 || rightPID.PrevInput != 0) {
+    if (leftPID._previous_input != 0 || rightPID._previous_input != 0) {
 	pid_reset(&leftPID);
 	pid_reset(&rightPID);
     }
@@ -466,8 +466,8 @@ void bridge_loop(UByte test) {
 	      // For PID code:
 	      is_moving = (Logical)(left_speed != 0 || right_speed != 0);
 	      if (is_moving) {
-		leftPID.TargetTicksPerFrame = left_speed;
-		rightPID.TargetTicksPerFrame = right_speed;
+		leftPID._target_ticks_per_frame = left_speed;
+		rightPID._target_ticks_per_frame = right_speed;
 	      } else {
 	        motor_speeds_set(0, 0);
 	      }
