@@ -298,7 +298,7 @@ void bridge_setup(UByte test) {
       break;
     case TEST_BUS_LINE:
       // No announce because we are talking to *host_uart*:
-      host_uart->string_print((Character *)"\r\nbb_line:\r\n");
+      host_uart->string_print((Character *)"\r\nros_ard_bridge_protocol:\r\n");
       host_uart->interrupt_set((Logical)1);
       bus_uart->interrupt_set((Logical)1);
       break;
@@ -376,6 +376,11 @@ void bridge_loop(UByte test) {
 	if (character == '\r') {
 	  // Dispatch on *command* character:
 	  switch (command) {
+	    case 'b': {
+	      // Print out baud rate ("b"):
+	      host_uart->string_print((Text)"19200\r\n");
+	      break;
+	    }
 	    case 'e': {
 	      // Read encoders ("e"):
 	      Integer encoder0 = bus_slave.command_integer_get(address, 2);
@@ -415,7 +420,7 @@ void bridge_loop(UByte test) {
 	      is_moving = (Logical)(left_speed != 0 || right_speed != 0);
 	      if (is_moving) {
 		left_motor_encoder.target_ticks_per_frame_set(left_speed);
-		right_motor_encoder.target_ticks_per_frame_set(right_speed);
+		right_motor_encoder.target_ticks_per_frame_set(-right_speed);
 	      } else {
 	        motor_speeds_set(0, 0);
 	      }
