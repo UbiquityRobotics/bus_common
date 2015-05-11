@@ -23,7 +23,12 @@ class Bus_Motor_Encoder {
     _derivative = derivative;
   };
 
-  void encoder_set(Integer encoder) {
+  virtual void encoder_set(Integer encoder) = 0;
+
+  virtual Integer encoder_get() = 0;
+
+  // This one needs to go away:
+  void encoder__set(Integer encoder) {
     _encoder = encoder;
   };
   
@@ -51,6 +56,8 @@ class Bus_Motor_Encoder {
   void proportional_set(Short proportional) {
     _proportional = proportional;
   };
+
+  virtual void pwm_set(Byte pwm) = 0;
 
   void target_ticks_per_frame_set(Integer speed) {
     _target_ticks_per_frame = (Double)speed;
