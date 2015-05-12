@@ -6,8 +6,6 @@
 class Bus_Motor_Encoder {
  public:
   Bus_Motor_Encoder();
-  void reset();
-  void do_pid();
 
   Short denominator_get() {
     return _denominator;
@@ -22,6 +20,8 @@ class Bus_Motor_Encoder {
   void derivative_set(Short derivative) {
     _derivative = derivative;
   };
+
+  void do_pid();
 
   virtual void encoder_set(Integer encoder) = 0;
 
@@ -58,6 +58,8 @@ class Bus_Motor_Encoder {
   };
 
   virtual void pwm_set(Byte pwm) = 0;
+
+  void reset();
 
   void target_ticks_per_frame_set(Integer speed) {
     _target_ticks_per_frame = (Double)speed;

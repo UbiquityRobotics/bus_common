@@ -32,7 +32,7 @@ void Bus_Motor_Encoder::do_pid() {
   //   http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
 
   Integer output = (_proportional * Perror -
-     _derivative * (input - _previous_input) + _integral_term) / _denominator;
+   _derivative * (input - _previous_input) + _integral_term) / _denominator;
   _previous_encoder = _encoder;
 
   output += _output;
