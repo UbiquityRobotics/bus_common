@@ -3,12 +3,14 @@
 #include <Bus_Slave.h>
 #include <Bus_Motor_Encoder.h>
 
+//  Loki: Ku 120, Pu 0.27  Kp=0.60Ku  Kd=KpPu/8 Ki=3Kp/Pu
 Bus_Motor_Encoder::Bus_Motor_Encoder() {
   _encoder = 0;
-  _proportional = 20;
-  _derivative = 12;
-  _integral = 0;
-  _denominator = 50;
+  _proportional = 70;
+  _derivative = 3;
+  _integral = 500;
+  _integral_cap = 500;
+  _denominator = 100;
   reset();
 }
 
@@ -45,6 +47,12 @@ void Bus_Motor_Encoder::do_pid() {
   else
     // allow turning changes, see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
    _integral_term += _integral * Perror;
+   if (_integral_term > _integral_cap) {
+     _integral_term = _integral_cap;
+   }
+   if (_integral_term < (-_integral_cap)) {
+     _integral_term = (-_integral_cap);
+   }
 
   _output = output;
   _previous_input = input;

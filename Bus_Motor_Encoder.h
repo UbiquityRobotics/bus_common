@@ -39,6 +39,13 @@ class Bus_Motor_Encoder {
     _integral = integral;
   };
 
+  Short integral_cap_get() {
+    return _integral_cap;
+  };
+  void integral_cap_set(Short integral_cap) {
+    _integral_cap = integral_cap;
+  };
+
   Logical is_reset() {
     return (Logical)(_previous_input == 0);
   }
@@ -70,6 +77,7 @@ class Bus_Motor_Encoder {
   Short _proportional;	// PID Proportional constant
   Short _derivative;	// PID Differential constant
   Short _integral;	// PID Integal constant
+  Short _integral_cap;	// PID Integal term cap
   Short _denominator;	// PID common denominator 
 
   Double _target_ticks_per_frame;	// target speed in ticks per frame
