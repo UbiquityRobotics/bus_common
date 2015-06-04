@@ -1,8 +1,11 @@
 // Copyright (c) 2015 by Mark Johnston.  All rights reserved.
 // Copyright (c) 2015 by Wayne Gramlich.  All rights reserved.
 
-// This file is indended to be specific to Loki platform
-//
+#ifndef SONAR_H_INCLUDED
+#define SONAR_H_INCLUDED 1
+
+#include <Bus_Slave.h>
+#include <RAB_Sonar.h>
 
 // We require these externally defined indexes due to need for super fast ISR
 #define  USONAR_QUEUE_LEN     8             // MUST be a power of 2
@@ -137,7 +140,7 @@ static const int sonar_trig16_pin = 0;          // IC Pin 28
 // 'ideal' but is acceptable
 class Sonar {
   public:
-    Sonar();
+    Sonar(UART *debug_uart, RAB_Sonar *rab_sonar);
     int calcQueueLevel(int Pidx, int Cidx, int queueSize);
     int getQueueLevel();
     unsigned long pullQueueEntry();
@@ -153,11 +156,14 @@ class Sonar {
     int getMeasSpec(int specNumber);
     unsigned long measTrigger(int specNumber);
     float echoUsToMeters(unsigned long pingDelay);
-    float inlineReadMeters(int sonarUnit);
+    int getLastDistInMm(int sonarUnit);
+    float getInlineReadMeters(int sonarUnit);
+    void poll();
   private:
-    int _numSonars;
-    int _numMeasSpecs;
+    UART *debug_uart_;
+    int numSonars_;
+    int numMeasSpecs_;
+    RAB_Sonar *rab_sonar_;
 };
 
-
-
+#endif // SONAR_H_INCLUDED
