@@ -129,6 +129,8 @@ static const int sonar_trig14_pin = 49;         // IC Pin 35
 static const int sonar_trig15_pin = 0;          // IC Pin 29
 static const int sonar_trig16_pin = 0;          // IC Pin 28
 
+#define ERR_COUNTERS_MAX                 8
+
 
 // Class to pull together management routines for Loki ultrasonic sensor
 // distance measurements
@@ -160,10 +162,19 @@ class Sonar {
     float getInlineReadMeters(int sonarUnit);
     void poll();
   private:
+    unsigned long current_delay_data1_;
+    unsigned long current_delay_data2_;
+    int cycle_number_;
     UART *debug_uart_;
-    int numSonars_;
-    int numMeasSpecs_;
+    int error_counters_[ERR_COUNTERS_MAX];
+    unsigned long full_cycle_counts_;
+    unsigned long measured_trigger_time_;
+    int number_sonars_;
+    int number_measurement_specs_;
     RAB_Sonar *rab_sonar_;
+    UByte sample_state_;
+    float sonar_distances_in_meters_[USONAR_MAX_UNITS+1];
+    unsigned long sonar_sample_times_[USONAR_MAX_UNITS+1];
 };
 
 #endif // SONAR_H_INCLUDED

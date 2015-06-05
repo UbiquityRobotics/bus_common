@@ -15,29 +15,26 @@
 #include "RAB_Sonar.h"
 #include "bus_server.h"
 
-static int  usonarSampleState = USONAR_STATE_MEAS_START;
 // The measurement cycle number (does not have to be sonar unit)
-static int  cycleNum = 0;
-static unsigned long currentDelayData1 = (unsigned long)0;
-static unsigned long currentDelayData2 = (unsigned long)0;
-static unsigned long fullCycleCounts = 0;
-#define ERR_COUNTERS_MAX                 8
-static int  errCounters[ERR_COUNTERS_MAX];
-//  for (int ix = 0; ix < ERR_COUNTERS_MAX ; ix++) {
-//    errCounters[ix] = 0;
-//  }
-unsigned long sonarSampleTimes[USONAR_MAX_UNITS+1];
-float sonarDistancesInMeters[USONAR_MAX_UNITS+1];
-//  for (int ix = 0; ix < USONAR_MAX_UNITS; ix++) {
-//    sonarDistancesInMeters[ix] = (float)(0.0);
-//    sonarSampleTimes[ix] = (unsigned long)0;
-//  }
-static unsigned long sonarMeasTriggerTime = 0;
 Sonar::Sonar(UART *debug_uart, RAB_Sonar *rab_sonar) {
+  current_delay_data1_ = (unsigned long)0;
+  current_delay_data2_ = (unsigned long)0;
+  cycle_number_ = 0;
   debug_uart_ = debug_uart;
-  numSonars_ = USONAR_MAX_UNITS;
-  numMeasSpecs_ = USONAR_MAX_SPECS;
+  full_cycle_counts_ = 0;
+  number_sonars_ = USONAR_MAX_UNITS;
+  number_measurement_specs_ = USONAR_MAX_SPECS;
   rab_sonar_ = rab_sonar;
+  sample_state_ = USONAR_STATE_MEAS_START;
+  measured_trigger_time_ = 0;
+
+  for (int ix = 0; ix < USONAR_MAX_UNITS; ix++) {
+    sonar_distances_in_meters_[ix] = (float)(0.0);
+    sonar_sample_times_[ix] = (unsigned long)0;
+  }
+  for (int ix = 0; ix < ERR_COUNTERS_MAX ; ix++) {
+    error_counters_[ix] = 0;
+  }
 }
 
 // Sonar echo completion Circular Queue interfaces for a background consumer
@@ -101,7 +98,7 @@ int Sonar::flushQueue() {
 // Return value of 1 indicates valid meas spec entry number
 // Negative value indicates unsupported spec table Entry
 int Sonar::isMeasSpecNumValid(int specNumber) {
-  if ((specNumber < 0) || (specNumber > numMeasSpecs_)) {
+  if ((specNumber < 0) || (specNumber > number_measurement_specs_)) {
     return -1;
   }
   return 1;
@@ -113,7 +110,7 @@ int Sonar::isMeasSpecNumValid(int specNumber) {
 int Sonar::unitNumToMeasSpecNum(int sonarUnit) {
   int specNumber = -1;
 
-  for (int i = 0; i < numMeasSpecs_; i++) {
+  for (int i = 0; i < number_measurement_specs_; i++) {
     if (usonar_measSpecs[i].unitNumber == sonarUnit) {
       specNumber = i;
     }
@@ -208,7 +205,7 @@ int Sonar::getEchoDetectPin(int specNumber) {
 // Non-zero returns the measurement methods and is thus non-zero
 int Sonar::isUnitEnabled(int sonarUnit) {
   int enabled = 0;
-  if ((sonarUnit < 1) || (sonarUnit > numSonars_)) {
+  if ((sonarUnit < 1) || (sonarUnit > number_sonars_)) {
     return -1;
   }
 
@@ -354,7 +351,7 @@ int Sonar::getLastDistInMm(int sonarUnit) {
     if ((sonarUnit < 1) || (sonarUnit > USONAR_MAX_UNITS)) {
         return -10;
     }
-    return (int)(sonarDistancesInMeters[sonarUnit] * (float)1000.0);
+    return (int)(sonar_distances_in_meters_[sonarUnit] * (float)1000.0);
 }
 
 void Sonar::poll() {
@@ -364,41 +361,42 @@ void Sonar::poll() {
       // We cycle through entries in the measurement spec table using cycleNum
       // Most calls accept measurement spec table entry number NOT sonar unit
       // number.
-      switch (usonarSampleState) {
+      switch (sample_state_) {
         case USONAR_STATE_MEAS_START: {
           int queueLevel = 0;
           queueLevel = getQueueLevel();  // We expect this to always be 0
           if ((queueLevel != 0) &&
 	   (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG)) {
             debug_uart_->print((Text)" Sonar WARNING at meas cycle ");
-            debug_uart_->integer_print(measSpecNumToUnitNum(cycleNum));
+            debug_uart_->integer_print(measSpecNumToUnitNum(cycle_number_));
             debug_uart_->print((Text)" start: Queue had ");
             debug_uart_->integer_print(queueLevel);
             debug_uart_->print((Text)" edges! \r\n");
             flushQueue();
-            currentDelayData1 = 0; // Reset sample gathering values for this run
-            currentDelayData2 = 0;
+            current_delay_data1_ = 0; // Reset sample gathering values for this run
+            current_delay_data2_ = 0;
           } else {
             // Indicate we are going to start next sonar measurement cycle
             if (rab_sonar_->system_debug_flags_get() &
 	     DBG_FLAG_USENSOR_DEBUG) {
               debug_uart_->print((Text)" Sonar meas cycle ");
-              debug_uart_->integer_print(measSpecNumToUnitNum(cycleNum));
+              debug_uart_->integer_print(measSpecNumToUnitNum(cycle_number_));
               debug_uart_->print((Text)" starting.\r\n");
             }
           }
 
-          cycleNum += 1;   // Bump to next entry in our measurement spec table 
-          if (cycleNum > USONAR_MAX_SPECS) {
-            cycleNum = 0;
+	  // Bump to next entry in our measurement spec table 
+          cycle_number_ += 1;
+          if (cycle_number_ > USONAR_MAX_SPECS) {
+            cycle_number_ = 0;
 
-            fullCycleCounts+= 1;
-            if (((fullCycleCounts & (unsigned long)(0x7)) == 0) && 
+            full_cycle_counts_ += 1;
+            if (((full_cycle_counts_ & (unsigned long)(0x7)) == 0) && 
              (rab_sonar_->system_debug_flags_get() & 
              DBG_FLAG_USENSOR_ERR_DEBUG)) {
               debug_uart_->print((Text)" Sonar ERR Counters: ");
               for (int ix = 0; ix < ERR_COUNTERS_MAX ; ix++) {
-                debug_uart_->integer_print(errCounters[ix]);
+                debug_uart_->integer_print(error_counters_[ix]);
                 debug_uart_->print((Text)" ");
               }
               debug_uart_->print((Text)"\r\n");
@@ -426,7 +424,7 @@ void Sonar::poll() {
           }
 
           // Skip any unit that will not work with PinChange interrupt
-          if ((getMeasSpec(cycleNum) & US_MEAS_METHOD_PCINT) == 0)  {
+          if ((getMeasSpec(cycle_number_) & US_MEAS_METHOD_PCINT) == 0)  {
             // This unit will not work so just skip it and do next on on
 	    // next pass
             break;
@@ -442,14 +440,14 @@ void Sonar::poll() {
           // Enable this units pin change interrupt then enable global
 	  // ints for pin changes
           PCIFR = 0x06;		// This clears any pending pin change ints
-          switch (getInterruptMaskRegNumber(cycleNum)) {
+          switch (getInterruptMaskRegNumber(cycle_number_)) {
             case 1:
               PCMSK2 = 0;
-              PCMSK1 = getInterruptBit(cycleNum);
+              PCMSK1 = getInterruptBit(cycle_number_);
               break;
             case 2:
               PCMSK1 = 0;
-              PCMSK2 = getInterruptBit(cycleNum);
+              PCMSK2 = getInterruptBit(cycle_number_);
               break;
             default:
               // This is REALLY a huge coding issue/problem in usonar_measSpec
@@ -463,19 +461,19 @@ void Sonar::poll() {
           SREG |= _BV(7);
          
           // Trigger the sonar unit to start measuring and return start time
-          sonarMeasTriggerTime = measTrigger(cycleNum);
+          measured_trigger_time_ = measTrigger(cycle_number_);
 
           if (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG) {
             char longStr[32];
-            ltoa(sonarMeasTriggerTime, longStr,10);
+            ltoa(measured_trigger_time_, longStr,10);
             debug_uart_->string_print((Text)" Sonar start Sample: ");
-            debug_uart_->integer_print(measSpecNumToUnitNum(cycleNum));
+            debug_uart_->integer_print(measSpecNumToUnitNum(cycle_number_));
             debug_uart_->string_print((Text)" at ");
             debug_uart_->string_print((Text)longStr);
             debug_uart_->string_print((Text)"us\r\n");
           }
 
-          usonarSampleState = USONAR_STATE_WAIT_FOR_MEAS;
+          sample_state_ = USONAR_STATE_WAIT_FOR_MEAS;
           }
           break;
 
@@ -494,16 +492,16 @@ void Sonar::poll() {
 
           // Look for counter to go 'around' and ignore this one. 
           // Unsigned math so we can get HUGE number
-          if (sonarMeasTriggerTime > rightNow) {
+          if (measured_trigger_time_ > rightNow) {
             if (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG) {
               debug_uart_->print(
 	       (Text)" Sonar system tic rollover in meas wait. \r\n");
             }
-            usonarSampleState = USONAR_STATE_MEAS_START;
+            sample_state_ = USONAR_STATE_MEAS_START;
             break;
           }
 
-          measCycleTime = rightNow - sonarMeasTriggerTime; 
+          measCycleTime = rightNow - measured_trigger_time_; 
 
           // If meas timer not done break on through till next pass
           if (measCycleTime < USONAR_MEAS_TIME)     {   
@@ -515,7 +513,7 @@ void Sonar::poll() {
           if (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG) {
             char longStr[32];
             debug_uart_->string_print((Text)" Sonar meas from: ");
-            ltoa(sonarMeasTriggerTime, longStr,10);
+            ltoa(measured_trigger_time_, longStr,10);
             debug_uart_->string_print((Text)longStr);
             debug_uart_->string_print((Text)"us to: ");
             ltoa(rightNow, longStr,10);
@@ -527,26 +525,32 @@ void Sonar::poll() {
           if (edgeCount != 2) {
             // We expect exactly two edges.  If not we abort this meas cycle
             if (edgeCount == 0) {
-              errCounters[0] += 1;       //  Most likely defective or broken/flakey wiring
+	      //  Most likely defective or broken/flakey wiring
+              error_counters_[0] += 1;
             } else if (edgeCount ==1) {
-              errCounters[1] += 1;       //  Most likely blocked sensor that waits 200ms
+              //  Most likely blocked sensor that waits 200ms
+              error_counters_[1] += 1;
             } else {
-              errCounters[2] += 1;       //  If this happens something is very wrong
+	      //  If this happens something is very wrong
+              error_counters_[2] += 1;
             }
             if (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG) {
               debug_uart_->print((Text)" Sonar ");
-              debug_uart_->integer_print((int)measSpecNumToUnitNum(cycleNum));
+              debug_uart_->integer_print(
+		(int)measSpecNumToUnitNum(cycle_number_));
               debug_uart_->print((Text)" in cycle ");
-              debug_uart_->integer_print(cycleNum);
+              debug_uart_->integer_print(cycle_number_);
               debug_uart_->print((Text)" ERROR! meas saw ");
               debug_uart_->integer_print(edgeCount);
               debug_uart_->print((Text)" edges! \r\n");
-              // special value as error type indicator but as things mature we should NOT stuff this
-              sonarDistancesInMeters[measSpecNumToUnitNum(cycleNum)] = 
+              // special value as error type indicator but as things
+	      // mature we should NOT stuff this
+              sonar_distances_in_meters_[measSpecNumToUnitNum(cycle_number_)] = 
                 echoUsToMeters((USONAR_ECHO_MAX + USONAR_ECHO_ERR1));
             }
 
-            usonarSampleState = USONAR_STATE_POST_SAMPLE_WAIT;   // move on to next sample cycle
+	    // move on to next sample cycle
+            sample_state_ = USONAR_STATE_POST_SAMPLE_WAIT;
 
             break;   // break to wait till next pass and do next sensor
           }
@@ -557,69 +561,85 @@ void Sonar::poll() {
 
           // So lets (FINALLY) get the two edge samples
           unsigned long echoPulseWidth;    // Time between edges
-          currentDelayData1 = pullQueueEntry();    // pull entry OR we get 0 if none yet
-          currentDelayData2 = pullQueueEntry();    // pull entry OR we get 0 if none yet
+	  // pull entry OR we get 0 if none yet
+          current_delay_data1_ = pullQueueEntry();
+	  // pull entry OR we get 0 if none yet
+          current_delay_data2_ = pullQueueEntry();
 
-          echoPulseWidth =  currentDelayData2 - currentDelayData1; // The 'real' meas data in uSec
+	  // The 'real' meas data in uSec
+          echoPulseWidth =  current_delay_data2_ - current_delay_data1_;
 
           if (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG) {
             char longStr[32];
             debug_uart_->string_print((Text)" Sonar edges from: ");
-            ltoa(currentDelayData1, longStr,10);
+            ltoa(current_delay_data1_, longStr,10);
             debug_uart_->string_print((Text)longStr);
             debug_uart_->string_print((Text)"us to: ");
-            ltoa(currentDelayData2, longStr,10);
+            ltoa(current_delay_data2_, longStr,10);
             debug_uart_->string_print((Text)longStr);
             debug_uart_->string_print((Text)"us \r\n");
           }
 
-          if (currentDelayData1 > currentDelayData2) {
-            // This is another form of rollover every 70 minutes or so but just 
-            errCounters[3] += 1;       // debug tally of errors
+          if (current_delay_data1_ > current_delay_data2_) {
+            // This is another form of rollover every 70 minutes or
+	    // so but just 
+            error_counters_[3] += 1;       // debug tally of errors
             if (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG) {
-              debug_uart_->print((Text)" Sonar sys tic rollover OR edges reversed\r\n");
-              // special value as error type indicator but as things mature we should NOT stuff this
-              sonarDistancesInMeters[measSpecNumToUnitNum(cycleNum)] = 
-                echoUsToMeters((unsigned long)USONAR_ECHO_MAX + (unsigned long)USONAR_ECHO_ERR2);
+              debug_uart_->print(
+	        (Text)" Sonar sys tic rollover OR edges reversed\r\n");
+              // special value as error type indicator but as things mature
+	      // we should NOT stuff this
+              sonar_distances_in_meters_[measSpecNumToUnitNum(cycle_number_)] = 
+                echoUsToMeters((unsigned long)USONAR_ECHO_MAX +
+		(unsigned long)USONAR_ECHO_ERR2);
             }
 
-            usonarSampleState = USONAR_STATE_POST_SAMPLE_WAIT;   // move on to next sample cycle
+	    // move on to next sample cycle
+            sample_state_ = USONAR_STATE_POST_SAMPLE_WAIT;
 
           } else if (echoPulseWidth > USONAR_MEAS_TOOLONG) {  
-            errCounters[4] += 1;       // debug tally of errors
+            error_counters_[4] += 1;       // debug tally of errors
             if (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG) {
               debug_uart_->print((Text)" Sonar meas result over the MAX\r\n");
             }
 
-          //  // special value as error type indicator but as things mature we should NOT stuff this
-          //  sonarDistancesInMeters[measSpecNumToUnitNum(cycleNum)] = 
-          //    usonar.echoUsToMeters((USONAR_ECHO_MAX + USONAR_ECHO_ERR3));
-            usonarSampleState = USONAR_STATE_POST_SAMPLE_WAIT;   // move on to next sample cycle
-
+            // special value as error type indicator but as things mature we
+	    // should NOT stuff this 
+            // sonar_distances_in_meters_[measSpecNumToUnitNum(cycle_number_)] =
+            //    usonar.echoUsToMeters((USONAR_ECHO_MAX + USONAR_ECHO_ERR3));
+	    // move on to next sample cycle
+            sample_state_ = USONAR_STATE_POST_SAMPLE_WAIT;
           } else {
               // Save our sample delay AND save our time we acquired the sample
               if (echoPulseWidth > USONAR_ECHO_MAX) {
-               // We are going to cap this as a form of non-expected result so can it
-                errCounters[5] += 1;       // debug tally of errors
-                if (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG) {
+               // Cap this as a form of non-expected result so can it
+                error_counters_[5] += 1;       // debug tally of errors
+                if (rab_sonar_->system_debug_flags_get() &
+		 DBG_FLAG_USENSOR_DEBUG) {
                   char longStr[32];
                   ltoa(echoPulseWidth, longStr,10);
                   debug_uart_->print((Text)" Sonar echo delay of ");
                   debug_uart_->print((Text)longStr);
                   debug_uart_->print((Text)" is over MAX!\r\n");
                 }
+
                 // We really should ignore this once system is robust
-                // echoPulseWidth = (unsigned long)USONAR_ECHO_MAX + (unsigned long)USONAR_ECHO_ERR4;
-                usonarSampleState = USONAR_STATE_POST_SAMPLE_WAIT;   // move on to next sample cycle
+                // echoPulseWidth = (unsigned long)USONAR_ECHO_MAX +
+		//  (unsigned long)USONAR_ECHO_ERR4;
+	        // move on to next sample cycle
+                sample_state_ = USONAR_STATE_POST_SAMPLE_WAIT;
                 break;
               }
 
               // THIS IS THE REAL AND DESIRED PLACE WE EXPECT TO BE EACH TIME!
-              sonarSampleTimes[measSpecNumToUnitNum(cycleNum)] = currentDelayData2;
+              sonar_sample_times_[measSpecNumToUnitNum(cycle_number_)] =
+	       current_delay_data2_;
               float distanceInMeters = echoUsToMeters(echoPulseWidth);
-              sonarDistancesInMeters[measSpecNumToUnitNum(cycleNum)] = distanceInMeters;
+              sonar_distances_in_meters_[measSpecNumToUnitNum(cycle_number_)] =
+	       distanceInMeters;
 
-              if (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG) {
+              if (rab_sonar_->system_debug_flags_get() &
+	       DBG_FLAG_USENSOR_DEBUG) {
                 char outBuf2[32];
                 float distInCm;
                 int   echoCm;
@@ -627,7 +647,8 @@ void Sonar::poll() {
                 distInCm = distanceInMeters * (float)(100.0);
                 dtostrf(distInCm, 6, 1, outBuf2);
                 debug_uart_->string_print((Text)" S: ");
-                debug_uart_->integer_print((int)measSpecNumToUnitNum(cycleNum));
+                debug_uart_->integer_print(
+		 (int)measSpecNumToUnitNum(cycle_number_));
                 debug_uart_->string_print((Text)" E: ");
                 debug_uart_->integer_print((int)echoCm);
                 debug_uart_->string_print((Text)"cm D: ");
@@ -635,29 +656,32 @@ void Sonar::poll() {
                 debug_uart_->string_print((Text)"cm \r\n");
               }
               }
-              usonarSampleState = USONAR_STATE_POST_SAMPLE_WAIT;
+              sample_state_ = USONAR_STATE_POST_SAMPLE_WAIT;
             }
           break;
 
         case USONAR_STATE_POST_SAMPLE_WAIT: {
-          // We have included a deadtime so we don't totaly hammer the ultrasound 
-          // this will then not drive dogs 'too' crazy
+          // We have included a deadtime so we don't totaly hammer the
+	  // ultrasound this will then not drive dogs 'too' crazy
           unsigned long waitTimer;
           unsigned long curTicks;
           curTicks = USONAR_GET_MICROSECONDS;
 
-          currentDelayData1 = 0;      // Reset the sample gathering values for this run
-          currentDelayData2 = 0;
+	  // Reset sample gathering values for this run
+          current_delay_data1_ = 0;
+          current_delay_data2_ = 0;
 
-          waitTimer = curTicks - sonarMeasTriggerTime; 
+          waitTimer = curTicks - measured_trigger_time_; 
 
-          if (sonarMeasTriggerTime > curTicks) {   // Unsigned math so we can get HUGE number
+          if (measured_trigger_time_ > curTicks) {
+	    // Unsigned math so we can get HUGE number
             if (rab_sonar_->system_debug_flags_get() & DBG_FLAG_USENSOR_DEBUG) {
-              debug_uart_->print((Text)" Sonar system timer rollover in meas spacing.\r\n");
+              debug_uart_->print(
+	       (Text)" Sonar system timer rollover in meas spacing.\r\n");
             }
-            usonarSampleState = USONAR_STATE_MEAS_START;
+            sample_state_ = USONAR_STATE_MEAS_START;
           } else if (waitTimer > USONAR_SAMPLES_US) {   
-            usonarSampleState = USONAR_STATE_MEAS_START;
+            sample_state_ = USONAR_STATE_MEAS_START;
           }
 
           // If we fall through without state change we are still waiting
@@ -665,7 +689,7 @@ void Sonar::poll() {
           break;
 
         default:
-              usonarSampleState = USONAR_STATE_MEAS_START;
+              sample_state_ = USONAR_STATE_MEAS_START;
         break;
       }
 }
