@@ -140,9 +140,9 @@ static const int sonar_trig16_pin = 0;          // IC Pin 28
 // This is specific to use of high speed ISR doing acquisition of data
 // so this class must use external fast edge detect queue which is not
 // 'ideal' but is acceptable
-class Sonar {
+class Sonar_Controller {
   public:
-    Sonar(UART *debug_uart, RAB_Sonar *rab_sonar);
+    Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar);
     int calcQueueLevel(int Pidx, int Cidx, int queueSize);
     int getQueueLevel();
     unsigned long pullQueueEntry();

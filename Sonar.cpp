@@ -16,7 +16,7 @@
 #include "bus_server.h"
 
 // The measurement cycle number (does not have to be sonar unit)
-Sonar::Sonar(UART *debug_uart, RAB_Sonar *rab_sonar) {
+Sonar_Controller::Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar) {
   current_delay_data1_ = (unsigned long)0;
   current_delay_data2_ = (unsigned long)0;
   cycle_number_ = 0;
@@ -41,7 +41,7 @@ Sonar::Sonar(UART *debug_uart, RAB_Sonar *rab_sonar) {
 
 /// A generic circular queue utility to get number of entries in any circular
 // queue.
-int Sonar::calcQueueLevel(int Pidx, int Cidx, int queueSize) {
+int Sonar_Controller::calcQueueLevel(int Pidx, int Cidx, int queueSize) {
   int queueLevel = 0;
   if (Pidx >= Cidx) {
     // Simple case is Cidx follows Pidx OR empty queue they are equal
@@ -54,7 +54,7 @@ int Sonar::calcQueueLevel(int Pidx, int Cidx, int queueSize) {
 
 // getQueueLevel() returns number of entries in the circular queue but
 // changes nothing
-int Sonar::getQueueLevel() {
+int Sonar_Controller::getQueueLevel() {
   int localPI = usonar_producerIndex;     // get atomic copy of producer index
 
   return calcQueueLevel(localPI, usonar_consumerIndex, USONAR_QUEUE_LEN);
@@ -63,7 +63,7 @@ int Sonar::getQueueLevel() {
 // Pull one entry from our edge detection circular queue if there are entries.
 // A return of 0 will happen if no entries are ready to pull at this time OR
 // the entry is 0
-unsigned long Sonar::pullQueueEntry() {
+unsigned long Sonar_Controller::pullQueueEntry() {
   int localPI = usonar_producerIndex;     // get atomic copy of producer index
   unsigned long queueEntry = 0;
 
@@ -86,7 +86,7 @@ unsigned long Sonar::pullQueueEntry() {
 // This empties the queue and no members are seen, they just go bye-bye
 //
 // We do return how many members were flushed
-int Sonar::flushQueue() {
+int Sonar_Controller::flushQueue() {
   int queueEntries = 0;
   while (pullQueueEntry() != 0) { queueEntries++; };  // Eat um all up, yum yum.
   return queueEntries;
@@ -97,7 +97,7 @@ int Sonar::flushQueue() {
 // 
 // Return value of 1 indicates valid meas spec entry number
 // Negative value indicates unsupported spec table Entry
-int Sonar::isMeasSpecNumValid(int specNumber) {
+int Sonar_Controller::isMeasSpecNumValid(int specNumber) {
   if ((specNumber < 0) || (specNumber > number_measurement_specs_)) {
     return -1;
   }
@@ -107,7 +107,7 @@ int Sonar::isMeasSpecNumValid(int specNumber) {
 // Get the measurement spec number for a given sonar unit number
 //
 // Negative value indicates the sonar unit number was not found
-int Sonar::unitNumToMeasSpecNum(int sonarUnit) {
+int Sonar_Controller::unitNumToMeasSpecNum(int sonarUnit) {
   int specNumber = -1;
 
   for (int i = 0; i < number_measurement_specs_; i++) {
@@ -122,7 +122,7 @@ int Sonar::unitNumToMeasSpecNum(int sonarUnit) {
 // Get the sonar unit number for a given spec table entry
 //
 // Negative value indicates unsupported spec table Entry
-int Sonar::measSpecNumToUnitNum(int specNumber) {
+int Sonar_Controller::measSpecNumToUnitNum(int specNumber) {
   int sonarUnit = 0;
 
   if (isMeasSpecNumValid(specNumber) < 0) {
@@ -139,7 +139,7 @@ int Sonar::measSpecNumToUnitNum(int specNumber) {
 // Negative value indicates unsupported spec table Entry
 // Zero return 0 indicates this unit does not support trigger line
 // a custom trigger is required for the measurement method.
-int Sonar::getMeasTriggerPin(int specNumber) {
+int Sonar_Controller::getMeasTriggerPin(int specNumber) {
   int trigPin = 0;
 
   if (isMeasSpecNumValid(specNumber) < 0) {
@@ -157,7 +157,7 @@ int Sonar::getMeasTriggerPin(int specNumber) {
 // Get the Pin change Interrupt Bank number for a spec table entry
 //
 // Negative value indicates unsupported spec table Entry
-int Sonar::getInterruptMaskRegNumber(int specNumber) {
+int Sonar_Controller::getInterruptMaskRegNumber(int specNumber) {
   if (isMeasSpecNumValid(specNumber) < 0) {
     return -1;
   }
@@ -167,7 +167,7 @@ int Sonar::getInterruptMaskRegNumber(int specNumber) {
 // Get the interrupt enable bit for the given spec table entry
 //
 // Negative value indicates unsupported spec table Entry
-int Sonar::getInterruptBit(int specNumber) {
+int Sonar_Controller::getInterruptBit(int specNumber) {
   if (isMeasSpecNumValid(specNumber) < 0) {
     return -1;
   }
@@ -180,7 +180,7 @@ int Sonar::getInterruptBit(int specNumber) {
 //
 // Negative value indicates unsupported spec table Entry
 // Zero return indicates this unit does not support the feature
-int Sonar::getEchoDetectPin(int specNumber) {
+int Sonar_Controller::getEchoDetectPin(int specNumber) {
   int echoPin = 0;
 
   if (isMeasSpecNumValid(specNumber) < 0) {
@@ -203,7 +203,7 @@ int Sonar::getEchoDetectPin(int specNumber) {
 //
 // Zero return indicates this unit does not support the feature
 // Non-zero returns the measurement methods and is thus non-zero
-int Sonar::isUnitEnabled(int sonarUnit) {
+int Sonar_Controller::isUnitEnabled(int sonarUnit) {
   int enabled = 0;
   if ((sonarUnit < 1) || (sonarUnit > number_sonars_)) {
     return -1;
@@ -223,7 +223,7 @@ int Sonar::isUnitEnabled(int sonarUnit) {
 //
 // Negative value indicates unsupported spec table Entry
 // A return of < 0 indicates bad sonar unit number
-int Sonar::getMeasSpec(int specNumber) {
+int Sonar_Controller::getMeasSpec(int specNumber) {
   if (isMeasSpecNumValid(specNumber) < 0) {
     return -1;
   }
@@ -243,7 +243,7 @@ int Sonar::getMeasSpec(int specNumber) {
 #define  USONAR_TRIG_PRE_LOW_US   4     // Time to hold trig line low b4 start
 #define  USONAR_TRIG_HIGH_US     20     // Time to hold trigger line high
 
-unsigned long Sonar::measTrigger(int specNumber) {
+unsigned long Sonar_Controller::measTrigger(int specNumber) {
   unsigned long triggerTime;
 
   if (isMeasSpecNumValid(specNumber) < 0) {
@@ -295,7 +295,7 @@ unsigned long Sonar::measTrigger(int specNumber) {
 }
 
 
-float Sonar::echoUsToMeters(unsigned long pingDelay) {
+float Sonar_Controller::echoUsToMeters(unsigned long pingDelay) {
   float  meters;
   meters = (float)(pingDelay) / USONAR_US_TO_METERS;
   return meters;
@@ -313,7 +313,7 @@ float Sonar::echoUsToMeters(unsigned long pingDelay) {
 // Note that this routine will not cause our background edge triggering
 // interrupts as the pulseIn() routine seems to prevent edge interrupts
 //
-float Sonar::getInlineReadMeters(int sonarUnit) {
+float Sonar_Controller::getInlineReadMeters(int sonarUnit) {
   float distInMeters = 0.0;
   unsigned long startTics;
 
@@ -347,14 +347,14 @@ float Sonar::getInlineReadMeters(int sonarUnit) {
 // This is a way to make accessable using extern for backdoors to query read
 // sensor distances.  We avoid using our class that may have encapsulated
 // this outside of this module
-int Sonar::getLastDistInMm(int sonarUnit) {
+int Sonar_Controller::getLastDistInMm(int sonarUnit) {
     if ((sonarUnit < 1) || (sonarUnit > USONAR_MAX_UNITS)) {
         return -10;
     }
     return (int)(sonar_distances_in_meters_[sonarUnit] * (float)1000.0);
 }
 
-void Sonar::poll() {
+void Sonar_Controller::poll() {
       // -----------------------------------------------------------------
       // Deal with sampling the sonar ultrasonic range sensors
       //
