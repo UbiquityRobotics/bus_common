@@ -42,7 +42,7 @@ Sonar_Controller::Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar,
   number_measurement_specs_ = USONAR_MAX_SPECS;
   rab_sonar_ = rab_sonar;
   sonars_ = sonars;
-  sample_state_ = USONAR_STATE_MEAS_START;
+  sample_state_ = STATE_MEAS_START_;
   measured_trigger_time_ = 0;
 
   UByte sonars_size = 0;
@@ -249,7 +249,7 @@ void Sonar_Controller::poll() {
       // Most calls accept measurement spec table entry number NOT sonar unit
       // number.
       switch (sample_state_) {
-        case USONAR_STATE_MEAS_START: {
+        case STATE_MEAS_START_: {
           int queueLevel = 0;
           queueLevel = getQueueLevel();  // We expect this to always be 0
           if ((queueLevel != 0) &&
@@ -360,11 +360,11 @@ void Sonar_Controller::poll() {
             debug_uart_->string_print((Text)"us\r\n");
           }
 
-          sample_state_ = USONAR_STATE_WAIT_FOR_MEAS;
+          sample_state_ = STATE_WAIT_FOR_MEAS_;
           }
           break;
 
-        case USONAR_STATE_WAIT_FOR_MEAS: {
+        case STATE_WAIT_FOR_MEAS_: {
           // wait max time to ensure both edges get seen for realistic
 	  // detection max
           //
@@ -384,7 +384,7 @@ void Sonar_Controller::poll() {
               debug_uart_->print(
 	       (Text)" Sonar system tic rollover in meas wait. \r\n");
             }
-            sample_state_ = USONAR_STATE_MEAS_START;
+            sample_state_ = STATE_MEAS_START_;
             break;
           }
 
@@ -437,7 +437,7 @@ void Sonar_Controller::poll() {
             }
 
 	    // move on to next sample cycle
-            sample_state_ = USONAR_STATE_POST_SAMPLE_WAIT;
+            sample_state_ = STATE_POST_SAMPLE_WAIT_;
 
             break;   // break to wait till next pass and do next sensor
           }
@@ -482,7 +482,7 @@ void Sonar_Controller::poll() {
             }
 
 	    // move on to next sample cycle
-            sample_state_ = USONAR_STATE_POST_SAMPLE_WAIT;
+            sample_state_ = STATE_POST_SAMPLE_WAIT_;
 
           } else if (echoPulseWidth > USONAR_MEAS_TOOLONG) {  
             error_counters_[4] += 1;       // debug tally of errors
@@ -495,7 +495,7 @@ void Sonar_Controller::poll() {
             // sonar_distances_in_meters_[measSpecNumToUnitNum(cycle_number_)] =
             //    usonar.echoUsToMeters((USONAR_ECHO_MAX + USONAR_ECHO_ERR3));
 	    // move on to next sample cycle
-            sample_state_ = USONAR_STATE_POST_SAMPLE_WAIT;
+            sample_state_ = STATE_POST_SAMPLE_WAIT_;
           } else {
               // Save our sample delay AND save our time we acquired the sample
               if (echoPulseWidth > USONAR_ECHO_MAX) {
@@ -514,7 +514,7 @@ void Sonar_Controller::poll() {
                 // echoPulseWidth = (unsigned long)USONAR_ECHO_MAX +
 		//  (unsigned long)USONAR_ECHO_ERR4;
 	        // move on to next sample cycle
-                sample_state_ = USONAR_STATE_POST_SAMPLE_WAIT;
+                sample_state_ = STATE_POST_SAMPLE_WAIT_;
                 break;
               }
 
@@ -543,11 +543,11 @@ void Sonar_Controller::poll() {
                 debug_uart_->string_print((Text)"cm \r\n");
               }
               }
-              sample_state_ = USONAR_STATE_POST_SAMPLE_WAIT;
+              sample_state_ = STATE_POST_SAMPLE_WAIT_;
             }
           break;
 
-        case USONAR_STATE_POST_SAMPLE_WAIT: {
+        case STATE_POST_SAMPLE_WAIT_: {
           // We have included a deadtime so we don't totaly hammer the
 	  // ultrasound this will then not drive dogs 'too' crazy
           unsigned long waitTimer;
@@ -566,9 +566,9 @@ void Sonar_Controller::poll() {
               debug_uart_->print(
 	       (Text)" Sonar system timer rollover in meas spacing.\r\n");
             }
-            sample_state_ = USONAR_STATE_MEAS_START;
+            sample_state_ = STATE_MEAS_START_;
           } else if (waitTimer > USONAR_SAMPLES_US) {   
-            sample_state_ = USONAR_STATE_MEAS_START;
+            sample_state_ = STATE_MEAS_START_;
           }
 
           // If we fall through without state change we are still waiting
@@ -576,7 +576,7 @@ void Sonar_Controller::poll() {
           break;
 
         default:
-              sample_state_ = USONAR_STATE_MEAS_START;
+              sample_state_ = STATE_MEAS_START_;
         break;
       }
 }

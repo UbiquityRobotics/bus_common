@@ -45,11 +45,6 @@ extern unsigned int  usonar_consumerIndex;
 #define USONAR_MAX_DIST_CM        900.0         // a cap used in reading well after meas has finished
 
 
-// States of sonar sensor acquision
-#define  USONAR_STATE_MEAS_START         0
-#define  USONAR_STATE_WAIT_FOR_MEAS      1
-#define  USONAR_STATE_POST_SAMPLE_WAIT   2
-
 // We found that the nice producer consumer queue has to be reset down wo
 // just do one meas per loop and reset queue each time so we get 2 edges
 #define  USONAR_ULTRA_FAST_ISR
@@ -105,6 +100,11 @@ class Sonar_Controller {
     static const UByte PIN_OFFSET_ = 0;  // Offset to port input register
     static const UByte DDR_OFFSET_ = 1;  // Offset to data direcection register
     static const UByte PORT_OFFSET_ = 2; // Offset to port output register
+    // States of sonar sensor acquision
+    static const UByte STATE_MEAS_START_ = 0;
+    static const UByte STATE_WAIT_FOR_MEAS_ = 1;
+    static const UByte STATE_POST_SAMPLE_WAIT_ = 2;
+    // Member variables:
     unsigned long current_delay_data1_;
     unsigned long current_delay_data2_;
     int cycle_number_;
