@@ -75,8 +75,6 @@ extern unsigned int  usonar_consumerIndex;
 typedef struct Sonar__struct {
   int unitNumber;     // The sonar unit for this entry where 3 would be the N3 sonar
   int measMethod;     // Method to be used for the measurement
-  int xtrigPin;        // For direct pin this is digital pin number for custom it a routine to use
-  int xechoPin;        // The echo pin in terms of arduino pin to use for pulseIn
   int intRegNum;      // Int reg number for pinint interrupt enable
   int intBit;         // the bit for enable of interrupts for this pinint
   volatile uint8_t *trigger_base; // Bass address trigger registers
@@ -97,7 +95,7 @@ typedef struct Sonar__struct {
 // 'ideal' but is acceptable
 class Sonar_Controller {
   public:
-    Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar, Sonar *sonars);
+    Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar, Sonar *sonars[]);
     void ports_initialize();
     int calcQueueLevel(int Pidx, int Cidx, int queueSize);
     int getQueueLevel();
@@ -106,10 +104,8 @@ class Sonar_Controller {
     int isMeasSpecNumValid(int specNumber);
     int unitNumToMeasSpecNum(int sonarUnit);
     int measSpecNumToUnitNum(int specNumber);
-    int xgetMeasTriggerPin(int specNumber);
     int getInterruptMaskRegNumber(int specNumber);
     int getInterruptBit(int specNumber);
-    int xgetEchoDetectPin(int specNumber);
     int isUnitEnabled(int sonarUnit);
     int getMeasSpec(int specNumber);
     unsigned long measTrigger(int specNumber);
@@ -117,6 +113,10 @@ class Sonar_Controller {
     int getLastDistInMm(int sonarUnit);
     void poll();
   private:
+    // Constants:
+    static const UByte PIN_OFFSET_ = 0;  // Offset to port input register
+    static const UByte DDR_OFFSET_ = 1;  // Offset to data direcection register
+    static const UByte PORT_OFFSET_ = 2; // Offset to port output register
     unsigned long current_delay_data1_;
     unsigned long current_delay_data2_;
     int cycle_number_;
@@ -124,17 +124,13 @@ class Sonar_Controller {
     int error_counters_[ERR_COUNTERS_MAX];
     unsigned long full_cycle_counts_;
     unsigned long measured_trigger_time_;
-    int number_sonars_;
     int number_measurement_specs_;
     RAB_Sonar *rab_sonar_;
     UByte sample_state_;
-    Sonar *sonars_;
+    Sonar **sonars_;
+    UByte sonars_size_;
     float sonar_distances_in_meters_[USONAR_MAX_UNITS+1];
     unsigned long sonar_sample_times_[USONAR_MAX_UNITS+1];
-    // Constants:
-    static const UByte PIN_OFFSET_ = 0;
-    static const UByte DDR_OFFSET_ = 1;
-    static const UByte PORT_OFFSET_ = 2;
 };
 
 #endif // SONAR_H_INCLUDED

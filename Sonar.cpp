@@ -17,16 +17,16 @@
 
 // The measurement cycle number (does not have to be sonar unit)
 Sonar_Controller::Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar,
- Sonar *sonars) {
+ Sonar *sonars[]) {
   current_delay_data1_ = (unsigned long)0;
   current_delay_data2_ = (unsigned long)0;
   cycle_number_ = 0;
   debug_uart_ = debug_uart;
   full_cycle_counts_ = 0;
-  number_sonars_ = USONAR_MAX_UNITS;
   number_measurement_specs_ = USONAR_MAX_SPECS;
   rab_sonar_ = rab_sonar;
   sonars_ = sonars;
+  sonars_size_ = USONAR_MAX_UNITS;
   sample_state_ = USONAR_STATE_MEAS_START;
   measured_trigger_time_ = 0;
 
@@ -41,8 +41,8 @@ Sonar_Controller::Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar,
 
 // Initialize the I/O pins used by the sonar.
 void Sonar_Controller::ports_initialize() {
-  for (UByte index = 0; index < number_sonars_; index++) {
-    Sonar *sonar = &sonars_[index];
+  for (UByte index = 0; index < sonars_size_; index++) {
+    Sonar *sonar = sonars_[index];
 
     // Set the triggers to be output pins:
     volatile uint8_t *trigger_base = sonar->trigger_base;
@@ -131,7 +131,7 @@ int Sonar_Controller::unitNumToMeasSpecNum(int sonarUnit) {
   int specNumber = -1;
 
   for (int i = 0; i < number_measurement_specs_; i++) {
-    if (sonars_[i].unitNumber == sonarUnit) {
+    if (sonars_[i]->unitNumber == sonarUnit) {
       specNumber = i;
     }
   }
@@ -149,29 +149,9 @@ int Sonar_Controller::measSpecNumToUnitNum(int specNumber) {
     return -1;
   }
 
-  sonarUnit = sonars_[specNumber].unitNumber;
+  sonarUnit = sonars_[specNumber]->unitNumber;
 
   return sonarUnit;
-}
-
-// Get the trigger pin for the given spec table entry
-//
-// Negative value indicates unsupported spec table Entry
-// Zero return 0 indicates this unit does not support trigger line
-// a custom trigger is required for the measurement method.
-int Sonar_Controller::xgetMeasTriggerPin(int specNumber) {
-  int trigPin = 0;
-
-  if (isMeasSpecNumValid(specNumber) < 0) {
-    return -1;
-  }
-
-  // If either of two modes is supported for main modes there is a trigger line
-  if (sonars_[specNumber].measMethod & US_MEAS_METHOD_PIN_PCINT) {
-    trigPin = sonars_[specNumber].xtrigPin;
-  }
-
-  return trigPin;
 }
 
 // Get the Pin change Interrupt Bank number for a spec table entry
@@ -181,7 +161,7 @@ int Sonar_Controller::getInterruptMaskRegNumber(int specNumber) {
   if (isMeasSpecNumValid(specNumber) < 0) {
     return -1;
   }
-  return sonars_[specNumber].intRegNum;
+  return sonars_[specNumber]->intRegNum;
 }
 
 // Get the interrupt enable bit for the given spec table entry
@@ -191,28 +171,7 @@ int Sonar_Controller::getInterruptBit(int specNumber) {
   if (isMeasSpecNumValid(specNumber) < 0) {
     return -1;
   }
-  return sonars_[specNumber].intBit;
-}
-
-// Get the echo detect pin from sonar unit numberthe given spec table entry
-// Echo detect is only used for the inline measurement modes
-// which only the lower half of the sonars support.
-//
-// Negative value indicates unsupported spec table Entry
-// Zero return indicates this unit does not support the feature
-int Sonar_Controller::xgetEchoDetectPin(int specNumber) {
-  int echoPin = 0;
-
-  if (isMeasSpecNumValid(specNumber) < 0) {
-   return -1;
-  }
-
-  // We have to have this sonar unit at least support echo pin mode
-  if (sonars_[specNumber].measMethod & US_MEAS_METHOD_PIN) {
-    echoPin = sonars_[specNumber].xechoPin;
-  }
-
-  return echoPin;
+  return sonars_[specNumber]->intBit;
 }
 
 // Indicate if the sonar unit is enabled
@@ -225,13 +184,13 @@ int Sonar_Controller::xgetEchoDetectPin(int specNumber) {
 // Non-zero returns the measurement methods and is thus non-zero
 int Sonar_Controller::isUnitEnabled(int sonarUnit) {
   int enabled = 0;
-  if ((sonarUnit < 1) || (sonarUnit > number_sonars_)) {
+  if ((sonarUnit < 1) || (sonarUnit > sonars_size_)) {
     return -1;
   }
 
   // This may seem 'silly' since NONE is zero but in case it changes
   // we will explicitly check with the define
-  enabled = sonars_[unitNumToMeasSpecNum(sonarUnit)].measMethod;
+  enabled = sonars_[unitNumToMeasSpecNum(sonarUnit)]->measMethod;
   if (enabled == US_MEAS_METHOD_NONE) {
     enabled = 0;
   }
@@ -248,7 +207,7 @@ int Sonar_Controller::getMeasSpec(int specNumber) {
     return -1;
   }
 
-  return sonars_[specNumber].measMethod;
+  return sonars_[specNumber]->measMethod;
 }
 
 
@@ -264,68 +223,21 @@ int Sonar_Controller::getMeasSpec(int specNumber) {
 #define  USONAR_TRIG_HIGH_US     20     // Time to hold trigger line high
 
 unsigned long Sonar_Controller::measTrigger(int specNumber) {
-  unsigned long triggerTime;
 
   if (isMeasSpecNumValid(specNumber) < 0) {
     return 0;
   }
 
-  triggerTime = USONAR_GET_MICROSECONDS | 1;   // set lsb, zero is an error code
-
-  static const UByte port_offset = 2;
-  //static const UByte ddr_offset = 1;
-  //static const UByte pin_offset = 0;
-
-  Sonar *sonar = &sonars_[specNumber];
+  Sonar *sonar = sonars_[specNumber];
   volatile uint8_t *trigger_base = sonar->trigger_base;
   UByte trigger_mask = sonar->trigger_mask;
-  trigger_base[port_offset] &= ~trigger_mask;
+  trigger_base[PORT_OFFSET_] &= ~trigger_mask;
   delayMicroseconds(USONAR_TRIG_PRE_LOW_US);
-  trigger_base[port_offset] |= trigger_mask;
+  trigger_base[PORT_OFFSET_] |= trigger_mask;
   delayMicroseconds(USONAR_TRIG_HIGH_US);
-  trigger_base[port_offset] &= ~trigger_mask;
-  return triggerTime;
+  trigger_base[PORT_OFFSET_] &= ~trigger_mask;
 
-  // Trap out custom trigger pin modes (Ugly but necessary)
-  //if (sonars_[specNumber].measMethod == US_MEAS_METHOD_T01_PG2) {
-  //  PORTG &= 0xfb;
-  //  delayMicroseconds(USONAR_TRIG_PRE_LOW_US);
-  //  PORTG |= 0x04;
-  //  delayMicroseconds(USONAR_TRIG_HIGH_US);
-  //  PORTG &= 0xfb;
-  //} else if (sonars_[specNumber].measMethod == US_MEAS_METHOD_T10_PJ7){
-  //  PORTJ &= 0x7f;
-  //  delayMicroseconds(USONAR_TRIG_PRE_LOW_US);
-  //  PORTJ |= 0x80;
-  //  delayMicroseconds(USONAR_TRIG_HIGH_US);
-  //  PORTJ &= 0x7f;
-  //} else if (sonars_[specNumber].measMethod == US_MEAS_METHOD_T15_PG4){
-  //  PORTG &= 0xef;
-  //  delayMicroseconds(USONAR_TRIG_PRE_LOW_US);
-  //  PORTG |= 0x10;
-  //  delayMicroseconds(USONAR_TRIG_HIGH_US);
-  //  PORTG &= 0xef;
-  //} else if (sonars_[specNumber].measMethod == US_MEAS_METHOD_T16_PG3){
-  //  PORTG &= 0xf7;
-  //  delayMicroseconds(USONAR_TRIG_PRE_LOW_US);
-  //  PORTG |= 0x08;
-  //  delayMicroseconds(USONAR_TRIG_HIGH_US);
-  //  PORTG &= 0xf7;
-  //} else {
-  //  // Non-custom modes just lookup digital line and do trigger with that
-  //  int trigPin = getMeasTriggerPin(specNumber);
-  //  if (trigPin == 0) {
-  //    return 0;
-  //  }
-  //
-  //  digitalWrite(trigPin, LOW);
-  //  delayMicroseconds(USONAR_TRIG_PRE_LOW_US);
-  //  digitalWrite(trigPin, HIGH);
-  //  delayMicroseconds(USONAR_TRIG_HIGH_US);
-  //  digitalWrite(trigPin, LOW);
-  //}
-  //
-  //return triggerTime;
+  return USONAR_GET_MICROSECONDS | 1;
 }
 
 
