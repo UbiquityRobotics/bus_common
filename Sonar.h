@@ -50,21 +50,6 @@ extern unsigned int  usonar_consumerIndex;
 #define  USONAR_STATE_WAIT_FOR_MEAS      1
 #define  USONAR_STATE_POST_SAMPLE_WAIT   2
 
-// Because a unit can support either of two methods the measurement method 
-// field is a bitmap.  Custom methods once we support them will add to the
-// 2 well known methods of PIN and PCINT
-#define US_MEAS_METHOD_NONE    0
-#define US_MEAS_METHOD_PIN     1     // Supports direct pulseIn() method
-#define US_MEAS_METHOD_PCINT   2     // Supports pin change interrupt method
-// Custom modes for trigger start
-// Trigger is Port J bit 7
-#define US_MEAS_METHOD_T01_PG2 (0x010|US_MEAS_METHOD_PIN|US_MEAS_METHOD_PCINT)
-#define US_MEAS_METHOD_T10_PJ7 (0x020|US_MEAS_METHOD_PCINT)
-#define US_MEAS_METHOD_T15_PG4 (0x040|US_MEAS_METHOD_PCINT)
-#define US_MEAS_METHOD_T16_PG3 (0x080|US_MEAS_METHOD_PCINT)
-
-#define US_MEAS_METHOD_PIN_PCINT   (US_MEAS_METHOD_PIN|US_MEAS_METHOD_PCINT)
-
 // We found that the nice producer consumer queue has to be reset down wo
 // just do one meas per loop and reset queue each time so we get 2 edges
 #define  USONAR_ULTRA_FAST_ISR
@@ -72,16 +57,21 @@ extern unsigned int  usonar_consumerIndex;
 // Tables to map sonar number to trigger digital line # and echo Axx line
 // If entry is 0, not supported yet as it does not have digital pin #
 // Need a more clever set of code to deal with all the abnormal pins
-typedef struct Sonar__struct {
-  int unitNumber;     // The sonar unit for this entry where 3 would be the N3 sonar
-  int measMethod;     // Method to be used for the measurement
-  int intRegNum;      // Int reg number for pinint interrupt enable
-  int intBit;         // the bit for enable of interrupts for this pinint
+class Sonar {
+ public:
+  Sonar(UByte unit_number, UByte interrupt_register_number,
+   UByte interrupt_bit,
+   volatile uint8_t *trigger_base, UByte trigger_mask,
+   volatile uint8_t *echo_base, UByte echo_mask);
+  // Member variables:
+  int unitNumber;               // Sonar unit (e.g 3 => connector N3 on Loki)
+  int intRegNum;                // Int reg number for pinint interrupt enable
+  int intBit;                   // bit for enable of interrupts for this pinint
   volatile uint8_t *trigger_base; // Bass address trigger registers
-  UByte trigger_mask; // Mask to use to trigger pin.
+  UByte trigger_mask;          // Mask to use to trigger pin.
   volatile uint8_t *echo_base; // Base address of echo registers
-  UByte echo_mask;    // Mask to use to trigger pin.
-} Sonar;
+  UByte echo_mask;             // Mask to use to trigger pin.
+};
 
 #define ERR_COUNTERS_MAX                 8
 
@@ -106,8 +96,6 @@ class Sonar_Controller {
     int measSpecNumToUnitNum(int specNumber);
     int getInterruptMaskRegNumber(int specNumber);
     int getInterruptBit(int specNumber);
-    int isUnitEnabled(int sonarUnit);
-    int getMeasSpec(int specNumber);
     unsigned long measTrigger(int specNumber);
     float echoUsToMeters(unsigned long pingDelay);
     int getLastDistInMm(int sonarUnit);

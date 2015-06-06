@@ -15,7 +15,23 @@
 #include "RAB_Sonar.h"
 #include "bus_server.h"
 
+// *Sonar* constructor and methods:
+
+Sonar::Sonar(UByte unit_number, UByte interrupt_register_number,
+ UByte interrupt_bit,
+ volatile uint8_t *xtrigger_base, UByte xtrigger_mask,
+ volatile uint8_t *xecho_base, UByte xecho_mask) {
+  unitNumber = unit_number;
+  intRegNum = interrupt_register_number;
+  intBit = interrupt_bit;
+  trigger_base = xtrigger_base;
+  trigger_mask = xtrigger_mask;
+  echo_base = xecho_base;
+  echo_mask = xecho_mask;
+}
+
 // The measurement cycle number (does not have to be sonar unit)
+
 Sonar_Controller::Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar,
  Sonar *sonars[]) {
   current_delay_data1_ = (unsigned long)0;
@@ -26,9 +42,14 @@ Sonar_Controller::Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar,
   number_measurement_specs_ = USONAR_MAX_SPECS;
   rab_sonar_ = rab_sonar;
   sonars_ = sonars;
-  sonars_size_ = USONAR_MAX_UNITS;
   sample_state_ = USONAR_STATE_MEAS_START;
   measured_trigger_time_ = 0;
+
+  UByte sonars_size = 0;
+  while (*sonars++ != (Sonar *)0) {
+    sonars_size += 1;
+  }
+  sonars_size_ = sonars_size;
 
   for (int ix = 0; ix < USONAR_MAX_UNITS; ix++) {
     sonar_distances_in_meters_[ix] = (float)(0.0);
@@ -174,43 +195,6 @@ int Sonar_Controller::getInterruptBit(int specNumber) {
   return sonars_[specNumber]->intBit;
 }
 
-// Indicate if the sonar unit is enabled
-//
-// NOTE: This is one of a few calls that take in Sonar Unit Number!
-//
-// Negative value indicates unsupported sonar unit number
-//
-// Zero return indicates this unit does not support the feature
-// Non-zero returns the measurement methods and is thus non-zero
-int Sonar_Controller::isUnitEnabled(int sonarUnit) {
-  int enabled = 0;
-  if ((sonarUnit < 1) || (sonarUnit > sonars_size_)) {
-    return -1;
-  }
-
-  // This may seem 'silly' since NONE is zero but in case it changes
-  // we will explicitly check with the define
-  enabled = sonars_[unitNumToMeasSpecNum(sonarUnit)]->measMethod;
-  if (enabled == US_MEAS_METHOD_NONE) {
-    enabled = 0;
-  }
-
-  return enabled;
-}
-
-// Fetch the measurement spec for a given spec table entry
-//
-// Negative value indicates unsupported spec table Entry
-// A return of < 0 indicates bad sonar unit number
-int Sonar_Controller::getMeasSpec(int specNumber) {
-  if (isMeasSpecNumValid(specNumber) < 0) {
-    return -1;
-  }
-
-  return sonars_[specNumber]->measMethod;
-}
-
-
 // Trigger the given ultrasonic sonar in the given spec table entry
 // The sonar unit number is given to this routine as written on PC board
 // This routine shields the caller from knowing the hardware pin
@@ -327,11 +311,11 @@ void Sonar_Controller::poll() {
           }
 
           // Skip any unit that will not work with PinChange interrupt
-          if ((getMeasSpec(cycle_number_) & US_MEAS_METHOD_PCINT) == 0)  {
-            // This unit will not work so just skip it and do next on on
-	    // next pass
-            break;
-          }
+          //if ((getMeasSpec(cycle_number_) & US_MEAS_METHOD_PCINT) == 0)  {
+          //  // This unit will not work so just skip it and do next on on
+	  //  // next pass
+          //  break;
+          //}
 
           // Start the trigger for this sensor and enable interrupts
           #ifdef USONAR_ULTRA_FAST_ISR
