@@ -68,7 +68,98 @@ Sonar_Controller::Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar,
   for (UByte index = 0; index < ERROR_COUNTERS_SIZE_ ; index++) {
     error_counters_[index] = 0;
   }
+}
 
+
+// All the interrupt code is done as static member variables and
+// static member functions.
+
+// Define the circular queue members and indexes.
+// Remember! this is highly optimized so no fancy classes used here folks!
+//
+// Queue Rules:
+//  - The index values increment for each entry and roll back to 0 when equal to USONAR_QUEUE_LEN
+//    It is possible to have consumer index near end and producer near start index of 0 which means
+//    the entries are rolling around but are still all valid.  Producers and consumer MUST deal with this.
+//  - Producer may only put in entries if 2 or more spaces are open
+//  - Producer must drop entries if queue is full
+//  - Producer places data at next index past current producer index in both arrays 
+//    and THEN bumps producer index to point to that index when values are intact.
+//  - Consumer may only read entries up to and including current producer index.
+//  - Consumer may only bump consumer index to one more than what has just been processed.
+//    Consumer must NEVER try to read the values once consumer has bumped consumer index past
+//
+// Queue Member Descriptions
+//  usonar_echoEdgeQueue[]    ISR fed queue to hold edge change detections produced in fast ISR.
+//                            Entires are 30 bit timestamp with lower 2 bits showing the bank that changed
+//                            Note that the timestamp will roll over in around 70 min
+//  usonar_EchoChangedPins[]  Not used yet!  Is to hold a 1 for each pin that has changed at this timestamp.
+//                            Bits 23:0 are to be placed properly by each ISR
+//
+
+// The Echo timestamp is saved with the least sig 2 bits being set to the channel for this timestamp
+// We do not know which bits changed, we only know at least one changed in this bank.
+// We also have a word of info to hold other info we may want the ISR to return
+// So this means the sonar cycling needs to be careful to only do one sample at a time from any one bank
+
+unsigned int Sonar_Controller::consumer_index_ = 0;
+unsigned int Sonar_Controller::producer_index_ = 0;
+unsigned long Sonar_Controller::echo_edge_queue_[QUEUE_SIZE_];
+unsigned long Sonar_Controller::echo_info_queue_[QUEUE_SIZE_];
+
+// We found that the nice producer consumer queue has to be reset down wo
+// just do one meas per loop and reset queue each time so we get 2 edges
+
+// Set *USONAR_ULTRA_FAST_ISR* to disable error checking:
+#define  USONAR_ULTRA_FAST_ISR
+
+// This ISR must be LIGHTNING FAST and is bare bones petal-to-the-metal
+// processing!
+//
+// Pidx = Cidx when queue is empty.  Consumer sees this as empy. Pi can
+// stuff away
+// Pidx = Index that will next be filled by producer IF there was space
+// Cidx = Index that will be read next time around IF Pidx != Cidx
+//
+// Pin Change Processing:
+// This ISR will take in which pins had changes on one bank of pins
+// and then push those changes with an associated timestamp in echoQueue[]
+// The echoQueue[] is a circular queue so if the background consumer task
+// has left the queue too full this ISR will loose data.
+void Sonar_Controller::interrupt_handler(UByte flags) {
+  unsigned long now = micros(); // Get clock FAST as we can
+
+#ifndef USONAR_ULTRA_FAST_ISR
+  int unused = 0;
+  int inuse  = 0;
+  // Ensure there is room in the queue even if we have rollover
+  if (usonar_consumerIndex <= usonar_producerIndex) {
+    inuse = usonar_producerIndex - usonar_consumerIndex;
+  } else {
+    inuse =
+     (USONAR_QUEUE_LEN - usonar_consumerIndex) + usonar_producerIndex + 1;
+  }
+  unused = USONAR_QUEUE_LEN - inuse;
+
+  if (unused >= USONAR_MIN_EMPTIES) {
+#endif
+
+    // We can produce this entry into the queue and bump producer index
+    unsigned int nextProducerIndex = producer_index_ + 1;
+    if (nextProducerIndex >= QUEUE_SIZE_) 
+      nextProducerIndex = 0;
+
+    // Since timer resolution is about 8us and this clock is usec we will
+    // use the LOWER 2 bits to indicate which bank this change is from
+    echo_edge_queue_[producer_index_] = (now & 0xfffffffc) | flags;
+    // Bump producer index to this valid one
+    producer_index_ = nextProducerIndex;
+
+#ifndef USONAR_ULTRA_FAST_ISR
+  } else {
+    usonar_queueOverflow  += 1;
+  }
+#endif
 }
 
 // Initialize the I/O port for the sonar:
@@ -99,9 +190,9 @@ int Sonar_Controller::calcQueueLevel(int Pidx, int Cidx, int queueSize) {
 // getQueueLevel() returns number of entries in the circular queue but
 // changes nothing
 int Sonar_Controller::getQueueLevel() {
-  int localPI = usonar_producerIndex;     // get atomic copy of producer index
+  int localPI = producer_index_;     // get atomic copy of producer index
 
-  return calcQueueLevel(localPI, usonar_consumerIndex, USONAR_QUEUE_LEN);
+  return calcQueueLevel(localPI, consumer_index_, QUEUE_SIZE_);
 }
 
 // Initialize the I/O pins used by the sonar controller:
@@ -116,20 +207,20 @@ void Sonar_Controller::ports_initialize() {
 // A return of 0 will happen if no entries are ready to pull at this time OR
 // the entry is 0
 unsigned long Sonar_Controller::pullQueueEntry() {
-  int localPI = usonar_producerIndex;     // get atomic copy of producer index
+  int localPI = producer_index_;     // get atomic copy of producer index
   unsigned long queueEntry = 0;
 
-  if (calcQueueLevel(localPI, usonar_consumerIndex, USONAR_QUEUE_LEN) > 0) {
+  if (calcQueueLevel(localPI, consumer_index_, QUEUE_SIZE_) > 0) {
 
-    queueEntry = usonar_echoEdgeQueue[usonar_consumerIndex];
+    queueEntry = echo_edge_queue_[consumer_index_];
 
     // Find the next index we will bump the consumer index to once done
-    int nextCI = usonar_consumerIndex + 1;
-    if (nextCI >= USONAR_QUEUE_LEN) {
+    int nextCI = consumer_index_ + 1;
+    if (nextCI >= QUEUE_SIZE_) {
       nextCI = 0;     // case of roll-around for next entry
     }
 
-    usonar_consumerIndex = nextCI;   // We have consumed so bump consumer index
+    consumer_index_ = nextCI;   // We have consumed so bump consumer index
   }
 
   return queueEntry;
@@ -225,7 +316,7 @@ unsigned long Sonar_Controller::measurement_trigger(UByte sonar_index) {
   // Trigger the measurement:
   sonar->measurement_trigger();
 
-  return USONAR_GET_MICROSECONDS | 1;
+  return micros() | 1;
 }
 
 
@@ -321,8 +412,8 @@ void Sonar_Controller::poll() {
           // Start the trigger for this sensor and enable interrupts
           #ifdef USONAR_ULTRA_FAST_ISR
 	  // For ultra-fast we only gather 2 and reset queue each time
-          usonar_producerIndex = 0;
-          usonar_consumerIndex = 0;    
+          producer_index_ = 0;
+          consumer_index_ = 0;    
           #endif
 
           // Enable this units pin change interrupt then enable global
@@ -376,7 +467,7 @@ void Sonar_Controller::poll() {
           unsigned long measCycleTime; // Time so far waiting for this meas.
           unsigned long rightNow;
 
-          rightNow = USONAR_GET_MICROSECONDS;
+          rightNow = micros();
 
           // Look for counter to go 'around' and ignore this one. 
           // Unsigned math so we can get HUGE number
@@ -557,7 +648,7 @@ void Sonar_Controller::poll() {
 	  // ultrasound this will then not drive dogs 'too' crazy
           unsigned long waitTimer;
           unsigned long curTicks;
-          curTicks = USONAR_GET_MICROSECONDS;
+          curTicks = micros();
 
 	  // Reset sample gathering values for this run
           current_delay_data1_ = 0;

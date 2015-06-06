@@ -7,64 +7,58 @@
 #include <Bus_Slave.h>
 #include <RAB_Sonar.h>
 
-// We require these externally defined indexes due to need for super fast ISR
-#define  USONAR_QUEUE_LEN     8             // MUST be a power of 2
-extern unsigned long usonar_echoEdgeQueue[USONAR_QUEUE_LEN];
-extern unsigned long usonar_echoInfoQueue[USONAR_QUEUE_LEN];
-
-// Owned by ISRs and only inspected by consumer:
-extern unsigned int  usonar_producerIndex;
-// Owned by consumer and only inspected by producer:
-extern unsigned int  usonar_consumerIndex;
-
-// System dependent clock for getting microseconds as fast as we can do it
-#define USONAR_GET_MICROSECONDS    micros()
-
-// We found that the nice producer consumer queue has to be reset down wo
-// just do one meas per loop and reset queue each time so we get 2 edges
-#define  USONAR_ULTRA_FAST_ISR
-
-// Tables to map sonar number to trigger digital line # and echo Axx line
-// If entry is 0, not supported yet as it does not have digital pin #
-// Need a more clever set of code to deal with all the abnormal pins
+// Each instance of a *Sonar* class object represents a single
+// HC-SR04 sonar object.
 class Sonar {
  public:
+  // Public constructors and member functions:
   Sonar(UByte unit_number, UByte interrupt_register_number,
    UByte interrupt_bit,
    volatile uint8_t *trigger_base, UByte trigger_mask,
    volatile uint8_t *echo_base, UByte echo_mask);
   void ports_initialize();
   void measurement_trigger();
-  // Member variables:
+
+  // Public member variables (for now):
   UByte unitNumber;            // Sonar unit (e.g 3 => connector N3 on Loki)
   UByte intRegNum;             // Int reg number for pinint interrupt enable
   UByte intBit;                // bit for enable of interrupts for this pinint
   float distance_in_meters;    // Distance in meters
   UInteger sample_time;	       // Sample time
+
  private:
+  // Constants:
   static const UByte PIN_OFFSET_ = 0;       // Offset to port input register
   static const UByte DDR_OFFSET_ = 1;       // Offset to data direcction reg.
   static const UByte PORT_OFFSET_ = 2;      // Offset to port output register
   static const UShort TRIG_PRE_LOW_US_ = 4; // Pre-trigger low hold time
   static const UShort TRIG_HIGH_US_ = 20;   // Trigger high hold time
-  // Member variables:
+
+  // Private member variables:
   volatile uint8_t *trigger_base_; // Bass address trigger registers
   UByte trigger_mask_;          // Mask to use to trigger pin.
   volatile uint8_t *echo_base_; // Base address of echo registers
   UByte echo_mask_;             // Mask to use to trigger pin.
 };
 
-// Class to pull together management routines for Loki ultrasonic sensor
-// distance measurements
+// There is one instance of a *Sonar_Controller* class object.
+// In order to use this class you need to do the following:
+// 
+// * define the Interrupt Service Routines for the appropraite
+//   pin change interrupts.  These routine call the static member
+//   function *Sonar::interrupt_handler()*.
 //
-// This is really to make things a little bit more contained but does not
-// stand on it's own
-// This is specific to use of high speed ISR doing acquisition of data
-// so this class must use external fast edge detect queue which is not
-// 'ideal' but is acceptable
+// * A single *Sonar_Controller* object is defined.  The *Sonar_Controller*
+//   constructor takes a null-terminated list of *Sonar* objects.
+//
+// * The main loop of the embedded program (aka. *loop*() ) must
+//   regularaly call *Sonar_Controller::poll()*.
+//
+// * The latest sonar values are optained with ...
 class Sonar_Controller {
  public:
   Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar, Sonar *sonars[]);
+  static void interrupt_handler(UByte flags);
   void ports_initialize();
   unsigned long measurement_trigger(UByte sonar_index);
   int calcQueueLevel(int Pidx, int Cidx, int queueSize);
@@ -89,6 +83,7 @@ class Sonar_Controller {
   static const UByte STATE_WAIT_FOR_MEAS_ = 1;
   static const UByte STATE_POST_SAMPLE_WAIT_ = 2;
   static const UByte ERROR_COUNTERS_SIZE_ = 8;
+  static const UByte QUEUE_SIZE_ = 8;             // MUST be a power of 2
   // Longest echo time we expect (28100 is 5  meters):
   // Define the parameters for measurement of Sonar Units
   //
@@ -128,6 +123,13 @@ class Sonar_Controller {
   UByte sample_state_;
   Sonar **sonars_;
   UByte sonars_size_;
+
+  // Owned by ISRs and only inspected by consumer:
+  static unsigned int producer_index_;
+  // Owned by consumer and only inspected by producer:
+  static unsigned int consumer_index_;
+  static unsigned long echo_edge_queue_[QUEUE_SIZE_];
+  static unsigned long echo_info_queue_[QUEUE_SIZE_];
 };
 
 #endif // SONAR_H_INCLUDED
