@@ -5,7 +5,6 @@
 #define SONAR_H_INCLUDED 1
 
 #include <Bus_Slave.h>
-#include <RAB_Sonar.h>
 
 // Each instance of a *Sonar* class object represents a single
 // HC-SR04 sonar object.
@@ -57,10 +56,15 @@ class Sonar {
 // * The latest sonar values are optained with ...
 class Sonar_Controller {
  public:
-  Sonar_Controller(UART *debug_uart, RAB_Sonar *rab_sonar, Sonar *sonars[]);
+  Sonar_Controller(UART *debug_uart, Sonar *sonars[]);
   static void interrupt_handler(UByte flags);
-  void ports_initialize();
   unsigned long measurement_trigger(UByte sonar_index);
+  void debug_flags_set(UShort debug_flags);
+  void debug_flag_values_set(
+   UShort error_flag, UShort general_flag, UShort results_flag);
+  void poll();
+  void ports_initialize();
+
   int calcQueueLevel(int Pidx, int Cidx, int queueSize);
   int getQueueLevel();
   unsigned long pullQueueEntry();
@@ -72,7 +76,6 @@ class Sonar_Controller {
   int getInterruptBit(int specNumber);
   float echoUsToMeters(unsigned long pingDelay);
   int getLastDistInMm(int sonarUnit);
-  void poll();
  private:
   // Constants:
   static const UByte PIN_OFFSET_ = 0;  // Offset to port input register
@@ -114,15 +117,19 @@ class Sonar_Controller {
   unsigned long current_delay_data1_;
   unsigned long current_delay_data2_;
   int cycle_number_;
+  UShort debug_flags_;
   UART *debug_uart_;
   int error_counters_[ERROR_COUNTERS_SIZE_];
   unsigned long full_cycle_counts_;
   unsigned long measured_trigger_time_;
   int number_measurement_specs_;
-  RAB_Sonar *rab_sonar_;
   UByte sample_state_;
   Sonar **sonars_;
   UByte sonars_size_;
+  // Debug flag masks:
+  UShort error_debug_flag_;
+  UShort general_debug_flag_;
+  UShort results_debug_flag_;
 
   // Owned by ISRs and only inspected by consumer:
   static unsigned int producer_index_;
