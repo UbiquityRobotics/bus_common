@@ -31,15 +31,13 @@ class Sonar_Queue {
 class Sonar {
  public:
   // Public constructors and member functions:
-  Sonar(UByte unit_number, UByte interrupt_register_number,
-   UByte interrupt_bit,
+  Sonar(UByte interrupt_register_number, UByte interrupt_bit,
    volatile uint8_t *trigger_base, UByte trigger_mask,
    volatile uint8_t *echo_base, UByte echo_mask);
   void initialize();
   void measurement_trigger();
 
   // Public member variables (for now):
-  UByte unitNumber;            // Sonar unit (e.g 3 => connector N3 on Loki)
   UByte intRegNum;             // Int reg number for pinint interrupt enable
   UByte intBit;                // bit for enable of interrupts for this pinint
   float distance_in_meters;    // Distance in meters
@@ -83,6 +81,7 @@ class Sonar_Controller {
   void debug_flag_values_set(
    UShort error_flag, UShort general_flag, UShort results_flag);
   void initialize();
+  UShort mm_distance_get(UByte sonar_index);
   void poll();
 
   int calcQueueLevel(int Pidx, int Cidx, int queueSize);
@@ -90,12 +89,9 @@ class Sonar_Controller {
   unsigned long pullQueueEntry();
   int flushQueue();
   int isMeasSpecNumValid(int specNumber);
-  int unitNumToMeasSpecNum(int sonarUnit);
-  int measSpecNumToUnitNum(int specNumber);
   int getInterruptMaskRegNumber(int specNumber);
   int getInterruptBit(int specNumber);
   float echoUsToMeters(unsigned long pingDelay);
-  int getLastDistInMm(int sonarUnit);
  private:
   // Constants:
   static const UByte PIN_OFFSET_ = 0;  // Offset to port input register

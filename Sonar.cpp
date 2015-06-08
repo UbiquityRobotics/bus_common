@@ -60,8 +60,7 @@ void Sonar_Queue::interrupt_service_routine() {
 
 // *Sonar* constructor and methods:
 
-Sonar::Sonar(UByte unit_number, UByte interrupt_register_number,
- UByte interrupt_bit,
+Sonar::Sonar(UByte interrupt_register_number, UByte interrupt_bit,
  volatile uint8_t *trigger_base, UByte trigger_mask,
  volatile uint8_t *echo_base, UByte echo_mask) {
   distance_in_meters = (float)0.0;
@@ -71,7 +70,6 @@ Sonar::Sonar(UByte unit_number, UByte interrupt_register_number,
   intRegNum = interrupt_register_number;
   trigger_base_ = trigger_base;
   trigger_mask_ = trigger_mask;
-  unitNumber = unit_number;
 }
 
 // Trigger a single sonar:
@@ -295,7 +293,7 @@ void Sonar_Controller::poll() {
           queueLevel = getQueueLevel();
           if ((queueLevel != 0) && (debug_flags_ & general_debug_flag_)) {
             debug_uart_->print((Text)" Sonar WARNING at meas cycle ");
-            debug_uart_->integer_print(measSpecNumToUnitNum(cycle_number_));
+            debug_uart_->integer_print(cycle_number_);
             debug_uart_->print((Text)" start: Queue had ");
             debug_uart_->integer_print(queueLevel);
             debug_uart_->print((Text)" edges! \r\n");
@@ -307,7 +305,7 @@ void Sonar_Controller::poll() {
             // Indicate we are going to start next sonar measurement cycle
             if (debug_flags_ & general_debug_flag_) {
               debug_uart_->print((Text)" Sonar meas cycle ");
-              debug_uart_->integer_print(measSpecNumToUnitNum(cycle_number_));
+              debug_uart_->integer_print(cycle_number_);
               debug_uart_->print((Text)" starting.\r\n");
             }
           }
@@ -330,19 +328,12 @@ void Sonar_Controller::poll() {
 
             if (debug_flags_ & results_debug_flag_) {
                char  outBuf[32];
-               float distInCm;
                debug_uart_->print((Text)" Sonars: ");
 	       for (UByte index = 0; index < sonars_size_; index++) {
-		 Sonar *sonar = sonars_[index];
-                  distInCm =
-		   (float)(getLastDistInMm(sonar->unitNumber))/(float)(10.0);
-                  if (distInCm > MAXIMUM_DISTANCE_CM_) {
-                    distInCm = MAXIMUM_DISTANCE_CM_;      // graceful hard cap
-                  }
-                  
-                  dtostrf(distInCm, 3, 1, outBuf);
-                  debug_uart_->string_print((Text)outBuf);
-                  debug_uart_->string_print((Text)" ");
+		 UShort mm_distance = mm_distance_get(index);
+                 dtostrf(mm_distance, 3, 1, outBuf);
+                 debug_uart_->string_print((Text)outBuf);
+                 debug_uart_->string_print((Text)" ");
                }
                debug_uart_->string_print((Text)"\r\n");
             }
@@ -409,7 +400,7 @@ void Sonar_Controller::poll() {
             char longStr[32];
             ltoa(measured_trigger_time_, longStr,10);
             debug_uart_->string_print((Text)" Sonar start Sample: ");
-            debug_uart_->integer_print(measSpecNumToUnitNum(cycle_number_));
+            debug_uart_->integer_print(cycle_number_);
             debug_uart_->string_print((Text)" at ");
             debug_uart_->string_print((Text)longStr);
             debug_uart_->string_print((Text)"us\r\n");
@@ -478,8 +469,7 @@ void Sonar_Controller::poll() {
             }
             if (debug_flags_ & general_debug_flag_) {
               debug_uart_->print((Text)" Sonar ");
-              debug_uart_->integer_print(
-		(int)measSpecNumToUnitNum(cycle_number_));
+              debug_uart_->integer_print(cycle_number_);
               debug_uart_->print((Text)" in cycle ");
               debug_uart_->integer_print(cycle_number_);
               debug_uart_->print((Text)" ERROR! meas saw ");
@@ -487,8 +477,7 @@ void Sonar_Controller::poll() {
               debug_uart_->print((Text)" edges! \r\n");
               // special value as error type indicator but as things
 	      // mature we should NOT stuff this
-	      UByte sonar_number = measSpecNumToUnitNum(cycle_number_);
-	      UByte sonar_index = unitNumToMeasSpecNum(sonar_number);
+	      UByte sonar_index = cycle_number_;
 	      sonars_[sonar_index]->distance_in_meters =
                 echoUsToMeters((ECHO_MAXIMUM_ + ECHO_ERROR1_));
             }
@@ -533,8 +522,7 @@ void Sonar_Controller::poll() {
 	        (Text)" Sonar sys tic rollover OR edges reversed\r\n");
               // special value as error type indicator but as things mature
 	      // we should NOT stuff this
-	      UByte sonar_number = measSpecNumToUnitNum(cycle_number_);
-	      UByte sonar_index = unitNumToMeasSpecNum(sonar_number);
+	      UByte sonar_index = cycle_number_;
               sonars_[sonar_index]->distance_in_meters = 
                 echoUsToMeters((unsigned long)ECHO_MAXIMUM_ +
 		(unsigned long)ECHO_ERROR2_);
@@ -577,8 +565,7 @@ void Sonar_Controller::poll() {
               }
 
               // THIS IS THE REAL AND DESIRED PLACE WE EXPECT TO BE EACH TIME!
-	      UByte sonar_unit = measSpecNumToUnitNum(cycle_number_);
-	      UByte sonar_index = unitNumToMeasSpecNum(sonar_unit);
+	      UByte sonar_index = cycle_number_;
               sonars_[sonar_index]->sample_time = current_delay_data2_;
               float distanceInMeters = echoUsToMeters(echoPulseWidth);
               sonars_[sonar_index]->distance_in_meters = distanceInMeters;
@@ -591,8 +578,7 @@ void Sonar_Controller::poll() {
                 distInCm = distanceInMeters * (float)(100.0);
                 dtostrf(distInCm, 6, 1, outBuf2);
                 debug_uart_->string_print((Text)" S: ");
-                debug_uart_->integer_print(
-		 (int)measSpecNumToUnitNum(cycle_number_));
+                debug_uart_->integer_print(cycle_number_);
                 debug_uart_->string_print((Text)" E: ");
                 debug_uart_->integer_print((int)echoCm);
                 debug_uart_->string_print((Text)"cm D: ");
@@ -708,36 +694,6 @@ int Sonar_Controller::isMeasSpecNumValid(int specNumber) {
   return 1;
 }
 
-// Get the measurement spec number for a given sonar unit number
-//
-// Negative value indicates the sonar unit number was not found
-int Sonar_Controller::unitNumToMeasSpecNum(int sonarUnit) {
-  int specNumber = -1;
-
-  for (int i = 0; i < number_measurement_specs_; i++) {
-    if (sonars_[i]->unitNumber == sonarUnit) {
-      specNumber = i;
-    }
-  }
-
-  return specNumber;
-}
-
-// Get the sonar unit number for a given spec table entry
-//
-// Negative value indicates unsupported spec table Entry
-int Sonar_Controller::measSpecNumToUnitNum(int specNumber) {
-  int sonarUnit = 0;
-
-  if (isMeasSpecNumValid(specNumber) < 0) {
-    return -1;
-  }
-
-  sonarUnit = sonars_[specNumber]->unitNumber;
-
-  return sonarUnit;
-}
-
 // Get the Pin change Interrupt Bank number for a spec table entry
 //
 // Negative value indicates unsupported spec table Entry
@@ -765,15 +721,12 @@ float Sonar_Controller::echoUsToMeters(unsigned long pingDelay) {
   return meters;
 }
 
-// This is a way to make accessable using extern for backdoors to query read
-// sensor distances.  We avoid using our class that may have encapsulated
-// this outside of this module
-int Sonar_Controller::getLastDistInMm(int sonarUnit) {
-  if ((sonarUnit < 1) || (sonarUnit > sonars_size_)) {
-    return -10;
+UShort Sonar_Controller::mm_distance_get(UByte sonar_index) {
+  UShort distance = (UShort)-10;  
+  if (sonar_index < sonars_size_) {
+    Sonar *sonar = sonars_[sonar_index];
+    distance = (UShort)(sonar->distance_in_meters * (float)1000.0);
   }
-  UByte sonars_index = unitNumToMeasSpecNum(sonarUnit);
-  Sonar *sonar = sonars_[sonars_index];
-  return (int)(sonar->distance_in_meters * (float)1000.0);
+  return distance;
 }
 
