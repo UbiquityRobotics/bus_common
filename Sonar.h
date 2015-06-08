@@ -42,7 +42,7 @@ class Sonar {
 
   // Public member variables (for now):
   UByte intRegNum;             // Int reg number for pinint interrupt enable
-  UByte intBit;                // bit for enable of interrupts for this pinint
+  UByte intMask;                // bit for enable of interrupts for this pinint
   float distance_in_meters;    // Distance in meters
   UInteger sample_time;	       // Sample time
 
