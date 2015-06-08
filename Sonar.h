@@ -6,6 +6,26 @@
 
 #include <Bus_Slave.h>
 
+class Sonar_Queue {
+ public:
+  Sonar_Queue(UByte mask_index, volatile uint8_t *io_port_base);
+  void interrupt_service_routine();
+ private:
+  static const UByte QUEUE_POWER_ = 4;
+  static const UByte QUEUE_SIZE_ = 1 << QUEUE_POWER_;
+  static const UByte QUEUE_MASK_ = QUEUE_SIZE_ - 1;
+  static const UByte PIN_INDEX_ = 0;
+  static const UByte DDR_INDEX_ = 1;
+  static const UByte PORT_INDEX_ = 2;
+
+  volatile uint8_t *io_port_base_;
+  UByte mask_index_;
+  UByte producer_index_;
+  UByte consumer_index_;
+  UByte changes_[QUEUE_SIZE_];
+  UShort ticks_[QUEUE_SIZE_];
+};
+
 // Each instance of a *Sonar* class object represents a single
 // HC-SR04 sonar object.
 class Sonar {
@@ -15,7 +35,7 @@ class Sonar {
    UByte interrupt_bit,
    volatile uint8_t *trigger_base, UByte trigger_mask,
    volatile uint8_t *echo_base, UByte echo_mask);
-  void ports_initialize();
+  void initialize();
   void measurement_trigger();
 
   // Public member variables (for now):
@@ -62,8 +82,8 @@ class Sonar_Controller {
   void debug_flags_set(UShort debug_flags);
   void debug_flag_values_set(
    UShort error_flag, UShort general_flag, UShort results_flag);
+  void initialize();
   void poll();
-  void ports_initialize();
 
   int calcQueueLevel(int Pidx, int Cidx, int queueSize);
   int getQueueLevel();
@@ -130,6 +150,7 @@ class Sonar_Controller {
   UShort error_debug_flag_;
   UShort general_debug_flag_;
   UShort results_debug_flag_;
+  UByte pin_change_interrupts_mask_;
 
   // Owned by ISRs and only inspected by consumer:
   static unsigned int producer_index_;

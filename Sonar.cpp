@@ -30,6 +30,34 @@
 #include "Arduino.h"
 #include "Sonar.h"
 
+// *Sonar_Queue* constructor and methods:
+
+Sonar_Queue::Sonar_Queue(UByte mask_index, volatile uint8_t *io_port_base) {
+  mask_index_ = mask_index;
+  io_port_base_ = io_port_base;
+  producer_index_ = 0;
+  consumer_index_ = 0;
+}
+
+void Sonar_Queue::interrupt_service_routine() {
+  // Grab the latest input port value:
+  UByte change = io_port_base_[PIN_INDEX_];
+
+  // The act of reading *TCNT1L* causes *TCNT1H* to be cached into
+  // a temporary register.  Thus, by reading *TCNT1L* before *TCNT1H*,
+  // we git a consistent 16-bit value without having to do silliness
+  // disabling interrupts and so forth...
+  UByte low_tick = TCNT1L;
+  UByte high_tick = TCNT1H;
+
+  // Stash the values away:
+  changes_[producer_index_] = change;
+  ticks_[producer_index_] = (((UShort)high_tick) << 8) | ((UShort)low_tick);
+
+  // Increment the *producer_index_*:
+  producer_index_ = (producer_index_ + 1) & QUEUE_MASK_;
+}
+
 // *Sonar* constructor and methods:
 
 Sonar::Sonar(UByte unit_number, UByte interrupt_register_number,
@@ -56,7 +84,7 @@ void Sonar::measurement_trigger() {
 }
 
 // Initialize the appropriate I/O pins for a *Sonar*:
-void Sonar::ports_initialize() {
+void Sonar::initialize() {
     // Set the triggers to be output pins:
     trigger_base_[PORT_OFFSET_] &= ~trigger_mask_; // Clear output bit
     trigger_base_[DDR_OFFSET_] |= trigger_mask_;   // Set pin to be an output
@@ -240,11 +268,17 @@ unsigned long Sonar_Controller::measurement_trigger(UByte sonar_index) {
 }
 
 // Initialize the I/O pins used by the sonar controller:
-void Sonar_Controller::ports_initialize() {
+void Sonar_Controller::initialize() {
+  // Initialize each *sonar* and compute *pin_change_interrrupts_mask_*:
+  pin_change_interrupts_mask_ = 0;
   for (UByte index = 0; index < sonars_size_; index++) {
     Sonar *sonar = sonars_[index];
-    sonar->ports_initialize();
+    sonar->initialize();
+    pin_change_interrupts_mask_ |= (1 << sonar->intRegNum);
   }
+
+  // Enable the pin change interrupt registers:
+  PCICR |= pin_change_interrupts_mask_;
 }
 
 void Sonar_Controller::poll() {
@@ -323,24 +357,49 @@ void Sonar_Controller::poll() {
 
           // Enable this units pin change interrupt then enable global
 	  // ints for pin changes
-          PCIFR = 0x06;		// This clears any pending pin change ints
-          switch (getInterruptMaskRegNumber(cycle_number_)) {
-            case 1:
-              PCMSK2 = 0;
-              PCMSK1 = getInterruptBit(cycle_number_);
-              break;
-            case 2:
-              PCMSK1 = 0;
-              PCMSK2 = getInterruptBit(cycle_number_);
-              break;
-            default:
-              // This is REALLY a huge coding issue/problem in usonar_measSpec
-              if (debug_flags_ & general_debug_flag_) {
-                debug_uart_->string_print(
-		 (Text)" Sonar ERROR in code for intRegNum!\r\n");
-              }
-              break;
-          } 
+          //PCIFR = 0x06;	// This clears any pending pin change ints
+
+	  // This clears any pending pin change interurrps:
+          PCIFR = pin_change_interrupts_mask_;
+
+	  // Zero out the PCMSKn registers:
+	  if (pin_change_interrupts_mask_ & 1) {
+	    PCMSK0 = 0;
+	  }
+	  if (pin_change_interrupts_mask_ & 2) {
+	    PCMSK1 = 0;
+	  }
+          if (pin_change_interrupts_mask_ & 4) {
+	    PCMSK2 = 0;
+	  }
+
+	  // Now set the appropriate pin change in the appropriate PCMSKn
+	  // register:
+	  volatile uint8_t *pin_change_mask_base = &PCMSK0;
+	  UByte pin_change_interrupt_offset =
+	    getInterruptMaskRegNumber(cycle_number_);
+	  UByte pin_change_mask = getInterruptBit(cycle_number_);
+	  pin_change_mask_base[pin_change_interrupt_offset] = pin_change_mask;
+
+          //switch (getInterruptMaskRegNumber(cycle_number_)) {
+          //  case 1:
+          //    PCMSK2 = 0;
+          //    PCMSK1 = getInterruptBit(cycle_number_);
+          //    break;
+          //  case 2:
+          //    PCMSK1 = 0;
+          //    PCMSK2 = getInterruptBit(cycle_number_);
+          //    break;
+          //  default:
+          //    // This is REALLY a huge coding issue/problem in usonar_measSpec
+          //    if (debug_flags_ & general_debug_flag_) {
+          //      debug_uart_->string_print(
+	  //	 (Text)" Sonar ERROR in code for intRegNum!\r\n");
+          //    }
+          //    break;
+          //} 
+
+	  // Enable global interrupts:
           SREG |= _BV(7);
          
           // Trigger the sonar unit to start measuring and return start time
