@@ -33,7 +33,10 @@ class Sonar {
   // Public constructors and member functions:
   Sonar(UByte interrupt_register_number, UByte interrupt_bit,
    volatile uint8_t *trigger_base, UByte trigger_mask,
+   Sonar_Queue *sonar_queue,
    volatile uint8_t *echo_base, UByte echo_mask);
+  UByte echo_mask_get() { return echo_mask_; };
+  Sonar_Queue *sonar_queue_get() { return sonar_queue_; };
   void initialize();
   void measurement_trigger();
 
@@ -52,10 +55,11 @@ class Sonar {
   static const UShort TRIG_HIGH_US_ = 20;   // Trigger high hold time
 
   // Private member variables:
-  volatile uint8_t *trigger_base_; // Bass address trigger registers
-  UByte trigger_mask_;          // Mask to use to trigger pin.
   volatile uint8_t *echo_base_; // Base address of echo registers
   UByte echo_mask_;             // Mask to use to trigger pin.
+  Sonar_Queue *sonar_queue_;    // Queue for sonar changes
+  volatile uint8_t *trigger_base_; // Bass address trigger registers
+  UByte trigger_mask_;          // Mask to use to trigger pin.
 };
 
 // There is one instance of a *Sonar_Controller* class object.

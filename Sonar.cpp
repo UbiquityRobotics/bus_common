@@ -62,12 +62,14 @@ void Sonar_Queue::interrupt_service_routine() {
 
 Sonar::Sonar(UByte interrupt_register_number, UByte interrupt_bit,
  volatile uint8_t *trigger_base, UByte trigger_mask,
+ Sonar_Queue *sonar_queue,
  volatile uint8_t *echo_base, UByte echo_mask) {
   distance_in_meters = (float)0.0;
   echo_base_ = echo_base;
   echo_mask_ = echo_mask;
   intBit = interrupt_bit;
   intRegNum = interrupt_register_number;
+  sonar_queue_ = sonar_queue;
   trigger_base_ = trigger_base;
   trigger_mask_ = trigger_mask;
 }
