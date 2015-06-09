@@ -60,15 +60,14 @@ void Sonar_Queue::interrupt_service_routine() {
 
 // *Sonar* constructor and methods:
 
-Sonar::Sonar(UByte interrupt_register_number, UByte interrupt_bit,
+Sonar::Sonar(UByte interrupt_register_number, UByte change_bit,
  volatile uint8_t *trigger_base, UByte trigger_bit,
  Sonar_Queue *sonar_queue,
  volatile uint8_t *echo_base, UByte echo_bit) {
+  change_mask_ = (1 << change_bit);
   distance_in_meters = (float)0.0;
   echo_base_ = echo_base;
   echo_mask_ = (1 << echo_bit);
-  intMask = (1 << interrupt_bit);
-  intRegNum = interrupt_register_number;
   sonar_queue_ = sonar_queue;
   trigger_base_ = trigger_base;
   trigger_mask_ = (1 << trigger_bit);
@@ -233,6 +232,12 @@ void Sonar_Controller::interrupt_handler(UByte flags) {
 
 // Set the *debug_flags_* variable:
 
+UByte Sonar_Controller::change_mask_get(UByte sonar_index) {
+  Sonar *sonar = sonars_[sonar_index];
+  UByte change_mask = sonar->change_mask_get();
+  return change_mask;
+}
+
 void Sonar_Controller::debug_flags_set(UShort debug_flags) {
   debug_flags_ = debug_flags;
 }
@@ -242,6 +247,19 @@ void Sonar_Controller::debug_flag_values_set(UShort error_debug_flag,
   error_debug_flag_ = error_debug_flag;
   general_debug_flag_ = general_debug_flag;
   results_debug_flag_ = results_debug_flag;
+}
+
+UByte Sonar_Controller::echo_mask_get(UByte sonar_index) {
+  Sonar *sonar = sonars_[sonar_index];
+  UByte echo_mask = sonar->echo_mask_get();
+  return echo_mask;
+}
+
+UByte Sonar_Controller::mask_index_get(UByte sonar_index) {
+  Sonar *sonar = sonars_[sonar_index];
+  Sonar_Queue *sonar_queue = sonar->sonar_queue_get();
+  UByte mask_index = sonar_queue->mask_index_get();
+  return mask_index;
 }
 
 // Initialize the I/O port for the sonar:
@@ -274,7 +292,9 @@ void Sonar_Controller::initialize() {
   for (UByte index = 0; index < sonars_size_; index++) {
     Sonar *sonar = sonars_[index];
     sonar->initialize();
-    pin_change_interrupts_mask_ |= (1 << sonar->intRegNum);
+    Sonar_Queue *sonar_queue = sonar->sonar_queue_get();
+    pin_change_interrupts_mask_ |= (1 << sonar_queue->mask_index_get());
+    //pin_change_interrupts_mask_ |= (1 << sonar->intRegNum);
   }
 
   // Enable the pin change interrupt registers:
@@ -368,11 +388,10 @@ void Sonar_Controller::poll() {
 
 	  // Now set the appropriate pin change in the appropriate PCMSKn
 	  // register:
-	  volatile uint8_t *pin_change_mask_base = &PCMSK0;
-	  UByte pin_change_interrupt_offset =
-	    getInterruptMaskRegNumber(cycle_number_);
-	  UByte pin_change_mask = getInterruptBit(cycle_number_);
-	  pin_change_mask_base[pin_change_interrupt_offset] = pin_change_mask;
+	  UByte mask_index = mask_index_get(cycle_number_);
+	  UByte change_mask = change_mask_get(cycle_number_);
+	  volatile uint8_t *masks_base = &PCMSK0;
+	  masks_base[mask_index] = change_mask;
 
           //switch (getInterruptMaskRegNumber(cycle_number_)) {
           //  case 1:
@@ -695,27 +714,6 @@ int Sonar_Controller::isMeasSpecNumValid(int specNumber) {
   }
   return 1;
 }
-
-// Get the Pin change Interrupt Bank number for a spec table entry
-//
-// Negative value indicates unsupported spec table Entry
-int Sonar_Controller::getInterruptMaskRegNumber(int specNumber) {
-  if (isMeasSpecNumValid(specNumber) < 0) {
-    return -1;
-  }
-  return sonars_[specNumber]->intRegNum;
-}
-
-// Get the interrupt enable bit for the given spec table entry
-//
-// Negative value indicates unsupported spec table Entry
-int Sonar_Controller::getInterruptBit(int specNumber) {
-  if (isMeasSpecNumValid(specNumber) < 0) {
-    return -1;
-  }
-  return sonars_[specNumber]->intMask;
-}
-
 
 float Sonar_Controller::echoUsToMeters(unsigned long pingDelay) {
   float  meters;

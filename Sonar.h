@@ -10,6 +10,7 @@ class Sonar_Queue {
  public:
   Sonar_Queue(UByte mask_index, volatile uint8_t *io_port_base);
   void interrupt_service_routine();
+  UByte mask_index_get() { return mask_index_; };
  private:
   static const UByte QUEUE_POWER_ = 4;
   static const UByte QUEUE_SIZE_ = 1 << QUEUE_POWER_;
@@ -31,18 +32,17 @@ class Sonar_Queue {
 class Sonar {
  public:
   // Public constructors and member functions:
-  Sonar(UByte interrupt_register_number, UByte interrupt_bit,
+  Sonar(UByte interrupt_register_number, UByte change_bit,
    volatile uint8_t *trigger_base, UByte trigger_mask,
    Sonar_Queue *sonar_queue,
    volatile uint8_t *echo_base, UByte echo_mask);
+  UByte change_mask_get() { return change_mask_; };
   UByte echo_mask_get() { return echo_mask_; };
   Sonar_Queue *sonar_queue_get() { return sonar_queue_; };
   void initialize();
   void measurement_trigger();
 
   // Public member variables (for now):
-  UByte intRegNum;             // Int reg number for pinint interrupt enable
-  UByte intMask;                // bit for enable of interrupts for this pinint
   float distance_in_meters;    // Distance in meters
   UInteger sample_time;	       // Sample time
 
@@ -55,6 +55,7 @@ class Sonar {
   static const UShort TRIG_HIGH_US_ = 20;   // Trigger high hold time
 
   // Private member variables:
+  UByte change_mask_;		// Mask for PCINT register
   volatile uint8_t *echo_base_; // Base address of echo registers
   UByte echo_mask_;             // Mask to use to trigger pin.
   Sonar_Queue *sonar_queue_;    // Queue for sonar changes
@@ -81,10 +82,13 @@ class Sonar_Controller {
   Sonar_Controller(UART *debug_uart, Sonar *sonars[]);
   static void interrupt_handler(UByte flags);
   unsigned long measurement_trigger(UByte sonar_index);
+  UByte change_mask_get(UByte sonar_index);
   void debug_flags_set(UShort debug_flags);
   void debug_flag_values_set(
    UShort error_flag, UShort general_flag, UShort results_flag);
+  UByte echo_mask_get(UByte sonar_index);
   void initialize();
+  UByte mask_index_get(UByte sonar_index);
   UShort mm_distance_get(UByte sonar_index);
   void poll();
 
@@ -93,8 +97,6 @@ class Sonar_Controller {
   unsigned long pullQueueEntry();
   int flushQueue();
   int isMeasSpecNumValid(int specNumber);
-  int getInterruptMaskRegNumber(int specNumber);
-  int getInterruptBit(int specNumber);
   float echoUsToMeters(unsigned long pingDelay);
  private:
   // Constants:
