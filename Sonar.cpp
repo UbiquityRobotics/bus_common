@@ -91,10 +91,10 @@ void Sonar::initialize() {
     echo_base_[DDR_OFFSET_] &= ~echo_mask_;	   // Set pin to be an input
 }
 
-// *Sonar_Controller* constructor:
+// *Sonars_Controller* constructor:
 
-Sonar_Controller::Sonar_Controller(UART *debug_uart,
- Sonar *sonars[], Sonar_Queue *sonar_queues[]) {
+Sonars_Controller::Sonars_Controller(UART *debug_uart,
+ Sonar *sonars[], Sonar_Queue *sonar_queues[], UByte sonars_schedule[]) {
   // Initialize various member variables:
   consumer_index_ = 0;
   current_delay_data1_ = (unsigned long)0;
@@ -106,8 +106,9 @@ Sonar_Controller::Sonar_Controller(UART *debug_uart,
   measured_trigger_time_ = 0;
   producer_index_ = 0;
   sample_state_ = STATE_MEAS_START_;
-  sonars_ = sonars;
   sonar_queues_ = sonar_queues;
+  sonars_ = sonars;
+  sonars_schedule_ = sonars_schedule;
   general_debug_flag_ = 0;
   error_debug_flag_ = 0;
   results_debug_flag_ = 0;
@@ -126,7 +127,7 @@ Sonar_Controller::Sonar_Controller(UART *debug_uart,
   }
 }
 
-// *Sonar_Controller* static variables and method(s):
+// *Sonars_Controller* static variables and method(s):
 
 // All the interrupt code is done as static member variables and
 // static member functions.
@@ -169,10 +170,10 @@ Sonar_Controller::Sonar_Controller(UART *debug_uart,
 // cycling needs to be careful to only do one sample at a time from any one
 // bank.
 
-unsigned int Sonar_Controller::consumer_index_ = 0;
-unsigned int Sonar_Controller::producer_index_ = 0;
-unsigned long Sonar_Controller::echo_edge_queue_[QUEUE_SIZE_];
-unsigned long Sonar_Controller::echo_info_queue_[QUEUE_SIZE_];
+unsigned int Sonars_Controller::consumer_index_ = 0;
+unsigned int Sonars_Controller::producer_index_ = 0;
+unsigned long Sonars_Controller::echo_edge_queue_[QUEUE_SIZE_];
+unsigned long Sonars_Controller::echo_info_queue_[QUEUE_SIZE_];
 
 // We found that the nice producer consumer queue has to be reset down wo
 // just do one meas per loop and reset queue each time so we get 2 edges
@@ -193,7 +194,7 @@ unsigned long Sonar_Controller::echo_info_queue_[QUEUE_SIZE_];
 // and then push those changes with an associated timestamp in echoQueue[]
 // The echoQueue[] is a circular queue so if the background consumer task
 // has left the queue too full this ISR will loose data.
-void Sonar_Controller::interrupt_handler(UByte flags) {
+void Sonars_Controller::interrupt_handler(UByte flags) {
   unsigned long now = micros(); // Get clock FAST as we can
 
 #ifndef USONAR_ULTRA_FAST_ISR
@@ -229,34 +230,34 @@ void Sonar_Controller::interrupt_handler(UByte flags) {
 #endif
 }
 
-// *Sonar_Controller* methods:
+// *Sonars_Controller* methods:
 
 // Set the *debug_flags_* variable:
 
-UByte Sonar_Controller::change_mask_get(UByte sonar_index) {
+UByte Sonars_Controller::change_mask_get(UByte sonar_index) {
   Sonar *sonar = sonars_[sonar_index];
   UByte change_mask = sonar->change_mask_get();
   return change_mask;
 }
 
-void Sonar_Controller::debug_flags_set(UShort debug_flags) {
+void Sonars_Controller::debug_flags_set(UShort debug_flags) {
   debug_flags_ = debug_flags;
 }
 
-void Sonar_Controller::debug_flag_values_set(UShort error_debug_flag,
+void Sonars_Controller::debug_flag_values_set(UShort error_debug_flag,
  UShort general_debug_flag, UShort results_debug_flag) {
   error_debug_flag_ = error_debug_flag;
   general_debug_flag_ = general_debug_flag;
   results_debug_flag_ = results_debug_flag;
 }
 
-UByte Sonar_Controller::echo_mask_get(UByte sonar_index) {
+UByte Sonars_Controller::echo_mask_get(UByte sonar_index) {
   Sonar *sonar = sonars_[sonar_index];
   UByte echo_mask = sonar->echo_mask_get();
   return echo_mask;
 }
 
-UByte Sonar_Controller::mask_index_get(UByte sonar_index) {
+UByte Sonars_Controller::mask_index_get(UByte sonar_index) {
   Sonar *sonar = sonars_[sonar_index];
   Sonar_Queue *sonar_queue = sonar->sonar_queue_get();
   UByte mask_index = sonar_queue->mask_index_get();
@@ -273,7 +274,7 @@ UByte Sonar_Controller::mask_index_get(UByte sonar_index) {
 // Note that the sonar itself will not reply for up to a few hundred
 // microseconds
 
-unsigned long Sonar_Controller::measurement_trigger(UByte sonar_index) {
+unsigned long Sonars_Controller::measurement_trigger(UByte sonar_index) {
   // Make sure we access a valid *sonar*:
   if (sonar_index >= sonars_size_) {
     sonar_index = 0;
@@ -287,7 +288,7 @@ unsigned long Sonar_Controller::measurement_trigger(UByte sonar_index) {
 }
 
 // Initialize the I/O pins used by the sonar controller:
-void Sonar_Controller::initialize() {
+void Sonars_Controller::initialize() {
   // Initialize each *sonar* and compute *pin_change_interrrupts_mask_*:
   pin_change_interrupts_mask_ = 0;
   for (UByte index = 0; index < sonars_size_; index++) {
@@ -306,9 +307,70 @@ void Sonar_Controller::initialize() {
 
   // Enable the pin change interrupt registers:
   PCICR |= pin_change_interrupts_mask_;
+
+  // We need to configure Timer 1 to be a 16-bit counter that
+  // ticks every 4uSec.  This means it is configured as a simple
+  // counter, with a 1/64 prescaler.  With a 16MHz crystal, this
+  // works out to 4uSec/Tick.
+
+  // TCCR1A has the following format:
+  //
+  //   aabb--ww
+  //
+  // where:
+  //
+  //   aa is the output compare mode for A (we want 00)
+  //   bb is the output compare mode for B (we want 00)
+  //   ww is the lower two bits of WWww (waveform generation mode) (we want 00)
+  //
+  // We want "aabb--WW" to be 0000000 (== 0):
+  TCCR1A = 0;  
+
+  // TCCR1B has the following format:
+  //
+  //   ne-WWccc
+  //
+  // where:
+  //
+  //   n   is the noise input canceller (not needed, set to 0)
+  //   e   is the edge input select (not neededs, set to 0)
+  //   WW  is the high two bits of WWww (waveform generation mode (we want 00)
+  //   ccc is the clock prescaler (CLKio/64 == 011)
+  //
+  // We want "ne-WWccc" to be 00000011 (== 3):
+  TCCR1B = 3;
+
+  // TCC1C has the following format:
+  //
+  //    ff------
+  // 
+  // where:
+  //
+  //   ff  is the foruce output control bits (not needed, to 0)
+  TCCR1C = 0;
+
+  // TIMSK1 has the following format:
+  //
+  //   --i--ba
+  //
+  // where:
+  //
+  //   i   is the input capture interrupt enable.
+  //   b   is the B compare match interrupt enable.
+  //   a   is the A compare match interrupt enable.
+  //   t   is the timer overflow interrupt enable.
+  //
+  // We want no interrupts, so set "--i--baa" to 00000000 (== 0);
+  TIMSK1 = 0;
+
+  // We can ignore the interrupt flag register TIFR1.
+
+  // On the ATmega640, ATmega1280, and the ATmega2560, we assume
+  // that the power reducition registers PRR0 and PRR1 are initialized
+  // to 0 and hence, that Timer 1 is enabled.
 }
 
-void Sonar_Controller::poll() {
+void Sonars_Controller::poll() {
       // -----------------------------------------------------------------
       // Deal with sampling the sonar ultrasonic range sensors
       //
@@ -656,7 +718,7 @@ void Sonar_Controller::poll() {
 
 /// A generic circular queue utility to get number of entries in any circular
 // queue.
-int Sonar_Controller::calcQueueLevel(int Pidx, int Cidx, int queueSize) {
+int Sonars_Controller::calcQueueLevel(int Pidx, int Cidx, int queueSize) {
   int queueLevel = 0;
   if (Pidx >= Cidx) {
     // Simple case is Cidx follows Pidx OR empty queue they are equal
@@ -670,7 +732,7 @@ int Sonar_Controller::calcQueueLevel(int Pidx, int Cidx, int queueSize) {
 
 // getQueueLevel() returns number of entries in the circular queue but
 // changes nothing
-int Sonar_Controller::getQueueLevel() {
+int Sonars_Controller::getQueueLevel() {
   int localPI = producer_index_;     // get atomic copy of producer index
 
   return calcQueueLevel(localPI, consumer_index_, QUEUE_SIZE_);
@@ -679,7 +741,7 @@ int Sonar_Controller::getQueueLevel() {
 // Pull one entry from our edge detection circular queue if there are entries.
 // A return of 0 will happen if no entries are ready to pull at this time OR
 // the entry is 0
-unsigned long Sonar_Controller::pullQueueEntry() {
+unsigned long Sonars_Controller::pullQueueEntry() {
   int localPI = producer_index_;     // get atomic copy of producer index
   unsigned long queueEntry = 0;
 
@@ -702,7 +764,7 @@ unsigned long Sonar_Controller::pullQueueEntry() {
 // This empties the queue and no members are seen, they just go bye-bye
 //
 // We do return how many members were flushed
-int Sonar_Controller::flushQueue() {
+int Sonars_Controller::flushQueue() {
   int queueEntries = 0;
   while (pullQueueEntry() != 0) {
     queueEntries++;
@@ -715,20 +777,20 @@ int Sonar_Controller::flushQueue() {
 // 
 // Return value of 1 indicates valid meas spec entry number
 // Negative value indicates unsupported spec table Entry
-int Sonar_Controller::isMeasSpecNumValid(int specNumber) {
+int Sonars_Controller::isMeasSpecNumValid(int specNumber) {
   if ((specNumber < 0) || (specNumber > number_measurement_specs_)) {
     return -1;
   }
   return 1;
 }
 
-float Sonar_Controller::echoUsToMeters(unsigned long pingDelay) {
+float Sonars_Controller::echoUsToMeters(unsigned long pingDelay) {
   float  meters;
   meters = (float)(pingDelay) / US_TO_METERS_;
   return meters;
 }
 
-UShort Sonar_Controller::mm_distance_get(UByte sonar_index) {
+UShort Sonars_Controller::mm_distance_get(UByte sonar_index) {
   UShort distance = (UShort)-10;  
   if (sonar_index < sonars_size_) {
     Sonar *sonar = sonars_[sonar_index];

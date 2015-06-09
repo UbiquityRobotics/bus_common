@@ -62,24 +62,24 @@ class Sonar {
   UByte trigger_mask_;          // Mask to use to trigger pin.
 };
 
-// There is one instance of a *Sonar_Controller* class object.
+// There is one instance of a *Sonars_Controller* class object.
 // In order to use this class you need to do the following:
 // 
 // * define the Interrupt Service Routines for the appropraite
 //   pin change interrupts.  These routine call the static member
 //   function *Sonar::interrupt_handler()*.
 //
-// * A single *Sonar_Controller* object is defined.  The *Sonar_Controller*
+// * A single *Sonars_Controller* object is defined.  The *Sonars_Controller*
 //   constructor takes a null-terminated list of *Sonar* objects.
 //
 // * The main loop of the embedded program (aka. *loop*() ) must
-//   regularaly call *Sonar_Controller::poll()*.
+//   regularaly call *Sonars_Controller::poll()*.
 //
 // * The latest sonar values are optained with ...
-class Sonar_Controller {
+class Sonars_Controller {
  public:
-  Sonar_Controller(UART *debug_uart,
-   Sonar *sonars[], Sonar_Queue *sonar_queues[]);
+  Sonars_Controller(UART *debug_uart,
+   Sonar *sonars[], Sonar_Queue *sonar_queues[], UByte sonars_schedule[]);
   static void interrupt_handler(UByte flags);
   unsigned long measurement_trigger(UByte sonar_index);
   UByte change_mask_get(UByte sonar_index);
@@ -147,6 +147,7 @@ class Sonar_Controller {
   int number_measurement_specs_;
   UByte sample_state_;
   Sonar **sonars_;
+  UByte *sonars_schedule_;
   UByte sonars_size_;
   // Debug flag masks:
   UShort error_debug_flag_;
