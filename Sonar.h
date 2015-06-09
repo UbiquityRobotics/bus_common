@@ -32,9 +32,8 @@ class Sonar_Queue {
 class Sonar {
  public:
   // Public constructors and member functions:
-  Sonar(UByte interrupt_register_number, UByte change_bit,
-   volatile uint8_t *trigger_base, UByte trigger_mask,
-   Sonar_Queue *sonar_queue,
+  Sonar(volatile uint8_t *trigger_base, UByte trigger_mask,
+   Sonar_Queue *sonar_queue, UByte change_bit,
    volatile uint8_t *echo_base, UByte echo_mask);
   UByte change_mask_get() { return change_mask_; };
   UByte echo_mask_get() { return echo_mask_; };
@@ -79,7 +78,8 @@ class Sonar {
 // * The latest sonar values are optained with ...
 class Sonar_Controller {
  public:
-  Sonar_Controller(UART *debug_uart, Sonar *sonars[]);
+  Sonar_Controller(UART *debug_uart,
+   Sonar *sonars[], Sonar_Queue *sonar_queues[]);
   static void interrupt_handler(UByte flags);
   unsigned long measurement_trigger(UByte sonar_index);
   UByte change_mask_get(UByte sonar_index);
@@ -153,6 +153,8 @@ class Sonar_Controller {
   UShort general_debug_flag_;
   UShort results_debug_flag_;
   UByte pin_change_interrupts_mask_;
+  Sonar_Queue **sonar_queues_;
+  UByte sonar_queues_size_;
 
   // Owned by ISRs and only inspected by consumer:
   static unsigned int producer_index_;

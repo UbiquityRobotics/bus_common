@@ -60,9 +60,8 @@ void Sonar_Queue::interrupt_service_routine() {
 
 // *Sonar* constructor and methods:
 
-Sonar::Sonar(UByte interrupt_register_number, UByte change_bit,
- volatile uint8_t *trigger_base, UByte trigger_bit,
- Sonar_Queue *sonar_queue,
+Sonar::Sonar(volatile uint8_t *trigger_base, UByte trigger_bit,
+ Sonar_Queue *sonar_queue, UByte change_bit,
  volatile uint8_t *echo_base, UByte echo_bit) {
   change_mask_ = (1 << change_bit);
   distance_in_meters = (float)0.0;
@@ -94,7 +93,8 @@ void Sonar::initialize() {
 
 // *Sonar_Controller* constructor:
 
-Sonar_Controller::Sonar_Controller(UART *debug_uart, Sonar *sonars[]) {
+Sonar_Controller::Sonar_Controller(UART *debug_uart,
+ Sonar *sonars[], Sonar_Queue *sonar_queues[]) {
   // Initialize various member variables:
   consumer_index_ = 0;
   current_delay_data1_ = (unsigned long)0;
@@ -107,6 +107,7 @@ Sonar_Controller::Sonar_Controller(UART *debug_uart, Sonar *sonars[]) {
   producer_index_ = 0;
   sample_state_ = STATE_MEAS_START_;
   sonars_ = sonars;
+  sonar_queues_ = sonar_queues;
   general_debug_flag_ = 0;
   error_debug_flag_ = 0;
   results_debug_flag_ = 0;
@@ -294,7 +295,13 @@ void Sonar_Controller::initialize() {
     sonar->initialize();
     Sonar_Queue *sonar_queue = sonar->sonar_queue_get();
     pin_change_interrupts_mask_ |= (1 << sonar_queue->mask_index_get());
-    //pin_change_interrupts_mask_ |= (1 << sonar->intRegNum);
+  }
+
+  // Figure out how many *Sonar_Queues* we have:
+  sonar_queues_size_ = 0;
+  while (sonar_queues_[sonar_queues_size_] != (Sonar_Queue *)0) {
+    sonar_queues_size_++;
+    //debug_uart_->string_print((Text)"+");
   }
 
   // Enable the pin change interrupt registers:
