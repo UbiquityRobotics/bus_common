@@ -8,12 +8,14 @@
 
 class Sonar_Queue {
  public:
-  Sonar_Queue(UByte mask_index, volatile uint8_t *io_port_base);
+  Sonar_Queue(UByte mask_index,
+   volatile uint8_t *io_port_base, UART *debug_uart);
   void change_mask_set(UByte change_mask)
    { *change_mask_register_ |= change_mask; };
-  UByte changes_peek() {return changes_[consumer_index_]; };
   void consume_one() { consumer_index_ = (consumer_index_ + 1) & QUEUE_MASK_; };
-  void enable();
+  UART *debug_uart_get() {return debug_uart_; } ;
+  UByte echos_peek() {return echos_[consumer_index_]; };
+  //void enable();
   void interrupt_service_routine();
   Logical is_empty() {return producer_index_ == consumer_index_; };
   UByte mask_index_get() { return mask_index_; };
@@ -29,7 +31,8 @@ class Sonar_Queue {
 
   UByte consumer_index_;
   volatile uint8_t *change_mask_register_;
-  UByte changes_[QUEUE_SIZE_];
+  UByte echos_[QUEUE_SIZE_];
+  UART *debug_uart_;
   volatile uint8_t *io_port_base_;
   UByte interrupt_mask_;
   UByte mask_index_;
@@ -48,13 +51,13 @@ class Sonar {
   UByte change_mask_get() { return change_mask_; };
   UByte echo_mask_get() { return echo_mask_; };
   Sonar_Queue *sonar_queue_get() { return sonar_queue_; };
-  Logical is_done() {return !state_ == STATE_OFF_; };
+  Logical is_done() {return (Logical)((state_ == STATE_OFF_) ? 1 : 0); };
   void initialize();
   void time_out();
   void trigger();
   void trigger_setup();
   void measurement_trigger();
-  void update(UShort queue_tick, UByte queue_change, Sonar_Queue *sonar_queue);
+  void update(UShort queue_tick, UByte queue_echo, Sonar_Queue *sonar_queue);
 
   // Public member variables (for now):
   float distance_in_meters;    // Distance in meters
@@ -73,6 +76,7 @@ class Sonar {
   static const UShort TRIGGER_TICKS_ = 4;   // 4ticks * 4uSec/tick = 16uSec.
 
   // Private member variables:
+  UART *debug_uart_;		// Debugging UART
   UByte state_;			// Sonar state
   UShort echo_start_ticks_;	// Time when echo pulse rose
   UShort echo_end_ticks_;	// Time when echo pulse lowered
@@ -113,6 +117,7 @@ class Sonars_Controller {
   UByte mask_index_get(UByte sonar_index);
   UShort mm_distance_get(UByte sonar_index);
   void sonar_queues_reset();
+  UByte sonars_schedule_size_get() {return sonars_schedule_size_; };
   void poll();
   void xpoll();
 
@@ -164,7 +169,7 @@ class Sonars_Controller {
   // A cap used in reading well after meas has finished:
   static const float MAXIMUM_DISTANCE_CM_ = 900.0;
 
-  static const UShort TIMEOUT_TICKS_ = 30000;
+  static const UShort TIMEOUT_TICKS_ = 60000;
 
   // State values for _
   static const UByte STATE_SHUT_DOWN_ = 0;

@@ -32,10 +32,12 @@
 
 // *Sonar_Queue* constructor and methods:
 
-Sonar_Queue::Sonar_Queue(UByte mask_index, volatile uint8_t *io_port_base) {
+Sonar_Queue::Sonar_Queue(
+ UByte mask_index, volatile uint8_t *io_port_base, UART *debug_uart) {
   volatile uint8_t *change_mask_base = &PCMSK0;
   change_mask_register_ = change_mask_base + mask_index;
   consumer_index_ = 0;
+  debug_uart_ = debug_uart;
   interrupt_mask_ = (1 << mask_index);
   io_port_base_ = io_port_base;
   mask_index_ = mask_index;	// Is *mask_index_* used by anyone?
@@ -44,7 +46,7 @@ Sonar_Queue::Sonar_Queue(UByte mask_index, volatile uint8_t *io_port_base) {
 
 void Sonar_Queue::interrupt_service_routine() {
   // Grab the latest input port value:
-  UByte change = io_port_base_[PIN_INDEX_];
+  UByte echo = io_port_base_[PIN_INDEX_];
 
   // The act of reading *TCNT1L* causes *TCNT1H* to be cached into
   // a temporary register.  Thus, by reading *TCNT1L* before *TCNT1H*,
@@ -54,7 +56,7 @@ void Sonar_Queue::interrupt_service_routine() {
   UByte high_tick = TCNT1H;
 
   // Stash the values away:
-  changes_[producer_index_] = change;
+  echos_[producer_index_] = echo;
   ticks_[producer_index_] = (((UShort)high_tick) << 8) | ((UShort)low_tick);
 
   // Increment the *producer_index_*:
@@ -76,6 +78,7 @@ Sonar::Sonar(volatile uint8_t *trigger_base, UByte trigger_bit,
  Sonar_Queue *sonar_queue, UByte change_bit,
  volatile uint8_t *echo_base, UByte echo_bit) {
   change_mask_ = (1 << change_bit);
+  debug_uart_ = sonar_queue->debug_uart_get();
   distance_in_meters = (float)0.0;
   echo_base_ = echo_base;
   echo_mask_ = (1 << echo_bit);
@@ -121,6 +124,7 @@ void Sonar::trigger_setup() {
     // previous iteration.  Whatever, we can't trigger the sonar until
     // the echo line goes low.  So, we leave this sonar inactive.
     state_ = STATE_OFF_;
+    //debug_uart_->string_print((Text)"-");
   } else {
     // Echo pulse is low.  We can activate this sonar:
 
@@ -132,6 +136,7 @@ void Sonar::trigger_setup() {
 
     // Mark this sonar as active:
     state_ = STATE_ECHO_RISE_WAIT_;
+    //debug_uart_->string_print((Text)"+");
   }
 }
 
@@ -149,28 +154,34 @@ void Sonar::trigger() {
   trigger_base_[PORT_OFFSET_] &= ~trigger_mask_;
 }
 
-void Sonar::update(UShort queue_ticks,
- UByte queue_change, Sonar_Queue *sonar_queue) {
+void Sonar::update(UShort ticks, UByte echo, Sonar_Queue *sonar_queue) {
+  //debug_uart_->integer_print(echo);
+  //debug_uart_->string_print((Text)" ");
+  //debug_uart_->integer_print(echo_mask_);
+
   switch (state_) {
     case STATE_OFF_: {
+      //debug_uart_->string_print((Text)"%");
       break;
     }
     case STATE_ECHO_RISE_WAIT_: {
-      if ((queue_ticks & change_mask_) != 0) {
+      if ((echo & echo_mask_) != 0) {
 	// We have a rising edge:
-	echo_start_ticks_ = queue_ticks;
+	echo_start_ticks_ = ticks;
 	state_ = STATE_ECHO_FALL_WAIT_;
+	//debug_uart_->string_print((Text)"^");
       }
       break;
     }
     case STATE_ECHO_FALL_WAIT_: {
-      if ((queue_ticks & ~change_mask_) == 0) {
+      if ((echo & ~echo_mask_) == 0) {
 	// We have a falling edge:
-	echo_end_ticks_ = queue_ticks;
+	echo_end_ticks_ = ticks;
 	// If we want, we can compute the distance here:
 	distance_in_meters =
 	 (float)(echo_end_ticks_ - echo_start_ticks_) / 1000.0;
 	state_ = STATE_OFF_;
+	//debug_uart_->string_print((Text)"v");
       }
       break;
     }
@@ -433,16 +444,17 @@ void Sonars_Controller::initialize() {
 
   // TCCR1A has the following format:
   //
-  //   aabb--ww
+  //   aabbccww
   //
   // where:
   //
   //   aa is the output compare mode for A (we want 00)
   //   bb is the output compare mode for B (we want 00)
+  //   cc is the output compare mode for c (we want 00)
   //   ww is the lower two bits of WWww (waveform generation mode) (we want 00)
   //
-  // We want "aabb--WW" to be 0000000 (== 0):
-  //TCCR1A = 0;  
+  // We want "aabbccWW" to be 0000000 (== 0):
+  TCCR1A = 0;  
 
   // TCCR1B has the following format:
   //
@@ -456,7 +468,7 @@ void Sonars_Controller::initialize() {
   //   ccc is the clock prescaler (CLKio/64 == 011)
   //
   // We want "ne-WWccc" to be 00000011 (== 3):
-  //TCCR1B = 3;
+  TCCR1B = 3;
 
   // TCC1C has the following format:
   //
@@ -465,7 +477,7 @@ void Sonars_Controller::initialize() {
   // where:
   //
   //   ff  is the foruce output control bits (not needed, to 0)
-  //TCCR1C = 0;
+  TCCR1C = 0;
 
   // TIMSK1 has the following format:
   //
@@ -479,7 +491,7 @@ void Sonars_Controller::initialize() {
   //   t   is the timer overflow interrupt enable.
   //
   // We want no interrupts, so set "--i--baa" to 00000000 (== 0);
-  //TIMSK1 = 0;
+  TIMSK1 = 0;
 
   // We can ignore the interrupt flag register TIFR1.
 
@@ -491,6 +503,10 @@ void Sonars_Controller::initialize() {
 void Sonars_Controller::xpoll() {
   switch (state_) {
     case STATE_SHUT_DOWN_: {
+      if (last_schedule_index_ + 2 >= sonars_schedule_size_) {
+        //debug_uart_->string_print((Text)"\r\n");
+      }
+      //debug_uart_->string_print((Text)"\r\nA");
       // Shut down each *sonar_queue*:
       for (UByte queue_index = 0;
        queue_index <= sonar_queues_size_; queue_index++) {
@@ -502,13 +518,14 @@ void Sonars_Controller::xpoll() {
       break;
     }
     case STATE_GROUP_NEXT_: {
+      //debug_uart_->string_print((Text)"B");
       // Figure out what the next sonar group in the *sonars_schedule* is:
 
       // Start with the assumption the we skip over a GROUP_END_:
       first_schedule_index_ = last_schedule_index_ + 2;
 
       // If *first_schedule_index_* is too big, reset it to 0:
-      if (last_schedule_index_ >= sonars_schedule_size_) {
+      if (first_schedule_index_ >= sonars_schedule_size_) {
 	first_schedule_index_ = 0;
       }
 
@@ -524,9 +541,12 @@ void Sonars_Controller::xpoll() {
 
       // Next, do the prework for the set of sonar triggers:
       state_ = STATE_TRIGGER_SETUP_;
+
+      //debug_uart_->integer_print(first_schedule_index_);
       break;
     }
     case STATE_TRIGGER_SETUP_: {
+      //debug_uart_->string_print((Text)"C");
       // Enable each sonar for pin-change interrupts:
       for (UByte schedule_index = first_schedule_index_;
        schedule_index <= last_schedule_index_; schedule_index++) {
@@ -537,10 +557,12 @@ void Sonars_Controller::xpoll() {
       break;
     }
     case STATE_TRIGGER_: {
+      //debug_uart_->string_print((Text)"D");
       // Advance to the next block of sonars:
 
       // Grab the starting time:
       start_ticks_ = TCNT1;
+      now_ticks_ = start_ticks_;
 
       // Enable the pin change interrupts:
       PCICR = pin_change_interrupts_mask_;
@@ -556,9 +578,16 @@ void Sonars_Controller::xpoll() {
       break;
     }
     case STATE_ECHO_WAIT_: {
+      //debug_uart_->string_print((Text)"<");
       // Remember *previous_now_ticks_* and get the latest *now_ticks_*:
       previous_now_ticks_ = now_ticks_;
+      //UByte now_ticks_low = TCNT1L;
+      //UByte now_ticks_high = TCNT1H;
+      //now_ticks_ = (((UShort)now_ticks_high) << 8) | (UShort)now_ticks_low;
       now_ticks_ = TCNT1;
+
+      //debug_uart_->integer_print(now_ticks_);
+      //debug_uart_->integer_print(first_schedule_index_);
 
       // Compute the deltas for both using *start_ticks_*:
       UShort delta_ticks = now_ticks_ - start_ticks_;
@@ -577,9 +606,10 @@ void Sonars_Controller::xpoll() {
          schedule_index <= last_schedule_index_; schedule_index++) {
 	  sonars_[sonars_schedule_[schedule_index]]->time_out();
 	}
-
 	// Since we are done, we shut down shut everything down and
 	// go to the next sonar group in the sonar schedule:
+        //debug_uart_->string_print((Text)"<F>");
+
 	state_ = STATE_SHUT_DOWN_;
 	return;
       }
@@ -591,8 +621,9 @@ void Sonars_Controller::xpoll() {
 	Sonar_Queue *sonar_queue = sonar_queues_[queue_index];
 	if (!sonar_queue->is_empty()) {
 	  // Process the queue:
-	  UShort queue_tick = sonar_queue->ticks_peek();
-	  UByte queue_change = sonar_queue->changes_peek();
+          //debug_uart_->string_print((Text)"<");
+	  UShort tick = sonar_queue->ticks_peek();
+	  UByte echo = sonar_queue->echos_peek();
 	  sonar_queue->consume_one();
 
 	  // Now visit each *sonar* and see let it decide if it wants
@@ -600,11 +631,12 @@ void Sonars_Controller::xpoll() {
 	  for (UByte schedule_index = first_schedule_index_;
 	   schedule_index <= last_schedule_index_; schedule_index++) {
 	    Sonar *sonar = sonars_[sonars_schedule_[schedule_index]];
-	    sonar->update(queue_tick, queue_change, sonar_queue);
+	    sonar->update(tick, echo, sonar_queue);
 	  }
 
 	  // The next time through we'll proccess any remaining
 	  // non-empty sonar queues. We remaining in the same *state_*:
+          //debug_uart_->string_print((Text)"G>");
 	  return;
 	}
       }
@@ -624,6 +656,7 @@ void Sonars_Controller::xpoll() {
       if (done_count >= last_schedule_index_ - first_schedule_index_ + 1) {
         // We are done:
         state_ = STATE_SHUT_DOWN_;
+        //debug_uart_->string_print((Text)"<H>");
         return;
       }
 
@@ -633,6 +666,7 @@ void Sonars_Controller::xpoll() {
       break;
     }
     default: {
+      //debug_uart_->string_print((Text)"<Z>");
       // It should be impossible to get here, but just in case, let's force
       // *state_* to be valid for the next time around:
       state_ = STATE_SHUT_DOWN_;
