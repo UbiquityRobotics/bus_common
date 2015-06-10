@@ -119,14 +119,6 @@ class Sonars_Controller {
   void sonar_queues_reset();
   UByte sonars_schedule_size_get() {return sonars_schedule_size_; };
   void poll();
-  void xpoll();
-
-  int calcQueueLevel(int Pidx, int Cidx, int queueSize);
-  int getQueueLevel();
-  unsigned long pullQueueEntry();
-  int flushQueue();
-  int isMeasSpecNumValid(int specNumber);
-  float echoUsToMeters(unsigned long pingDelay);
 
   static const UByte GROUP_END = 250;
   static const UByte SCHEDULE_END = 255;
@@ -141,8 +133,6 @@ class Sonars_Controller {
   static const UByte STATE_WAIT_FOR_MEAS_ = 1;
   static const UByte STATE_POST_SAMPLE_WAIT_ = 2;
 
-  static const UByte ERROR_COUNTERS_SIZE_ = 8;
-  static const UByte QUEUE_SIZE_ = 8;             // MUST be a power of 2
   // Longest echo time we expect (28100 is 5  meters):
   // Define the parameters for measurement of Sonar Units
   //
@@ -160,11 +150,6 @@ class Sonars_Controller {
   static const UInteger MEASURE_TOO_LONG_ = (UInteger)70000;
   // One measurement each time this many uSec goes by:
   static const UInteger SAMPLES_US_ = (UInteger)100000;
-  static const UInteger ECHO_ERROR1_ = (UInteger)(1*282);
-  static const UInteger ECHO_ERROR2_ = (UInteger)(2*282);
-  static const UInteger ECHO_ERROR3_ = (UInteger)(3*282);
-  static const UInteger ECHO_ERROR4_ = (UInteger)(4*282);
-  // Standard air nominal uSec delay for 2-way bounce time:
   static const float US_TO_METERS_ = 5620.0;
   // A cap used in reading well after meas has finished:
   static const float MAXIMUM_DISTANCE_CM_ = 900.0;
@@ -184,7 +169,6 @@ class Sonars_Controller {
   int cycle_number_;
   UShort debug_flags_;
   UART *debug_uart_;
-  int error_counters_[ERROR_COUNTERS_SIZE_];
   unsigned long full_cycle_counts_;
   unsigned long measured_trigger_time_;
   int number_measurement_specs_;
@@ -212,8 +196,6 @@ class Sonars_Controller {
   static unsigned int producer_index_;
   // Owned by consumer and only inspected by producer:
   static unsigned int consumer_index_;
-  static unsigned long echo_edge_queue_[QUEUE_SIZE_];
-  static unsigned long echo_info_queue_[QUEUE_SIZE_];
 };
 
 #endif // SONAR_H_INCLUDED
