@@ -9,8 +9,16 @@
 class Sonar_Queue {
  public:
   Sonar_Queue(UByte mask_index, volatile uint8_t *io_port_base);
+  void change_mask_set(UByte change_mask)
+   { *change_mask_register_ |= change_mask; };
+  UByte changes_peek() {return changes_[consumer_index_]; };
+  void consume_one() { consumer_index_ = (consumer_index_ + 1) & QUEUE_MASK_; };
+  void enable();
   void interrupt_service_routine();
+  Logical is_empty() {return producer_index_ == consumer_index_; };
   UByte mask_index_get() { return mask_index_; };
+  void shut_down();
+  UShort ticks_peek() {return ticks_[consumer_index_]; };
  private:
   static const UByte QUEUE_POWER_ = 4;
   static const UByte QUEUE_SIZE_ = 1 << QUEUE_POWER_;
@@ -19,11 +27,13 @@ class Sonar_Queue {
   static const UByte DDR_INDEX_ = 1;
   static const UByte PORT_INDEX_ = 2;
 
+  UByte consumer_index_;
+  volatile uint8_t *change_mask_register_;
+  UByte changes_[QUEUE_SIZE_];
   volatile uint8_t *io_port_base_;
+  UByte interrupt_mask_;
   UByte mask_index_;
   UByte producer_index_;
-  UByte consumer_index_;
-  UByte changes_[QUEUE_SIZE_];
   UShort ticks_[QUEUE_SIZE_];
 };
 
@@ -38,8 +48,13 @@ class Sonar {
   UByte change_mask_get() { return change_mask_; };
   UByte echo_mask_get() { return echo_mask_; };
   Sonar_Queue *sonar_queue_get() { return sonar_queue_; };
+  Logical is_done() {return !state_ == STATE_OFF_; };
   void initialize();
+  void time_out();
+  void trigger();
+  void trigger_setup();
   void measurement_trigger();
+  void update(UShort queue_tick, UByte queue_change, Sonar_Queue *sonar_queue);
 
   // Public member variables (for now):
   float distance_in_meters;    // Distance in meters
@@ -52,8 +67,15 @@ class Sonar {
   static const UByte PORT_OFFSET_ = 2;      // Offset to port output register
   static const UShort TRIG_PRE_LOW_US_ = 4; // Pre-trigger low hold time
   static const UShort TRIG_HIGH_US_ = 20;   // Trigger high hold time
+  static const UByte STATE_OFF_ = 0;
+  static const UByte STATE_ECHO_RISE_WAIT_ = 1;
+  static const UByte STATE_ECHO_FALL_WAIT_ = 2;
+  static const UShort TRIGGER_TICKS_ = 4;   // 4ticks * 4uSec/tick = 16uSec.
 
   // Private member variables:
+  UByte state_;			// Sonar state
+  UShort echo_start_ticks_;	// Time when echo pulse rose
+  UShort echo_end_ticks_;	// Time when echo pulse lowered
   UByte change_mask_;		// Mask for PCINT register
   volatile uint8_t *echo_base_; // Base address of echo registers
   UByte echo_mask_;             // Mask to use to trigger pin.
@@ -90,7 +112,9 @@ class Sonars_Controller {
   void initialize();
   UByte mask_index_get(UByte sonar_index);
   UShort mm_distance_get(UByte sonar_index);
+  void sonar_queues_reset();
   void poll();
+  void xpoll();
 
   int calcQueueLevel(int Pidx, int Cidx, int queueSize);
   int getQueueLevel();
@@ -98,6 +122,10 @@ class Sonars_Controller {
   int flushQueue();
   int isMeasSpecNumValid(int specNumber);
   float echoUsToMeters(unsigned long pingDelay);
+
+  static const UByte GROUP_END = 250;
+  static const UByte SCHEDULE_END = 255;
+
  private:
   // Constants:
   static const UByte PIN_OFFSET_ = 0;  // Offset to port input register
@@ -107,6 +135,7 @@ class Sonars_Controller {
   static const UByte STATE_MEAS_START_ = 0;
   static const UByte STATE_WAIT_FOR_MEAS_ = 1;
   static const UByte STATE_POST_SAMPLE_WAIT_ = 2;
+
   static const UByte ERROR_COUNTERS_SIZE_ = 8;
   static const UByte QUEUE_SIZE_ = 8;             // MUST be a power of 2
   // Longest echo time we expect (28100 is 5  meters):
@@ -135,6 +164,15 @@ class Sonars_Controller {
   // A cap used in reading well after meas has finished:
   static const float MAXIMUM_DISTANCE_CM_ = 900.0;
 
+  static const UShort TIMEOUT_TICKS_ = 30000;
+
+  // State values for _
+  static const UByte STATE_SHUT_DOWN_ = 0;
+  static const UByte STATE_GROUP_NEXT_ = 1;
+  static const UByte STATE_TRIGGER_SETUP_ = 2;
+  static const UByte STATE_TRIGGER_ = 3;
+  static const UByte STATE_ECHO_WAIT_ = 4;
+
   // Member variables:
   unsigned long current_delay_data1_;
   unsigned long current_delay_data2_;
@@ -148,6 +186,7 @@ class Sonars_Controller {
   UByte sample_state_;
   Sonar **sonars_;
   UByte *sonars_schedule_;
+  UByte sonars_schedule_size_;
   UByte sonars_size_;
   // Debug flag masks:
   UShort error_debug_flag_;
@@ -156,6 +195,13 @@ class Sonars_Controller {
   UByte pin_change_interrupts_mask_;
   Sonar_Queue **sonar_queues_;
   UByte sonar_queues_size_;
+
+  UByte first_schedule_index_;
+  UByte last_schedule_index_;
+  UByte state_;
+  UShort start_ticks_;
+  UShort now_ticks_;
+  UShort previous_now_ticks_;
 
   // Owned by ISRs and only inspected by consumer:
   static unsigned int producer_index_;
