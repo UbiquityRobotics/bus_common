@@ -80,20 +80,13 @@ Sonar::Sonar(volatile uint8_t *trigger_base, UByte trigger_bit,
   change_mask_ = (1 << change_bit);
   debug_uart_ = sonar_queue->debug_uart_get();
   distance_in_meters = (float)0.0;
+  echo_start_ticks_ = 0;
+  echo_end_ticks_ = 0;
   echo_base_ = echo_base;
   echo_mask_ = (1 << echo_bit);
   sonar_queue_ = sonar_queue;
   trigger_base_ = trigger_base;
   trigger_mask_ = (1 << trigger_bit);
-}
-
-// Trigger a single sonar:
-void Sonar::measurement_trigger() {
-  trigger_base_[PORT_OFFSET_] &= ~trigger_mask_;
-  delayMicroseconds(TRIG_PRE_LOW_US_);
-  trigger_base_[PORT_OFFSET_] |= trigger_mask_;
-  delayMicroseconds(TRIG_HIGH_US_);
-  trigger_base_[PORT_OFFSET_] &= ~trigger_mask_;
 }
 
 // Initialize the appropriate I/O pins for a *Sonar*:
@@ -104,6 +97,19 @@ void Sonar::initialize() {
 
     // Set the echos to be input pins:
     echo_base_[DDR_OFFSET_] &= ~echo_mask_;	   // Set pin to be an input
+}
+
+// The speed of sound is 340.29 M/Sec at sea level.
+// A sonar echo is requires a round trip to the object and back.
+// Thus, this distance is divided by 2.  Our clock ticks at 4uSec/tick.
+// Thus:
+//
+//   340.29 M    1    1000 mM      1 Sec.       4 uSec.             mM
+//   ======== * === * ======= * ============= * =======  =  .68048 ====
+//     1 Sec.    2      1 M     1000000 uSec.   1 Tick             Tick
+
+UShort Sonar::mm_distance_get() {
+  return ((echo_end_ticks_ - echo_start_ticks_) * 68) / 100;
 }
 
 // Set distance to 0xffff and if the sonar is still active.
@@ -196,14 +202,8 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
   //debug_uart->string_print((Text)"=>Sonars_Controller()!\r\n");
 
   // Initialize various member variables:
-  current_delay_data1_ = (unsigned long)0;
-  current_delay_data2_ = (unsigned long)0;
-  cycle_number_ = 0;
   debug_flags_ = 0;
   debug_uart_ = debug_uart;
-  full_cycle_counts_ = 0;
-  measured_trigger_time_ = 0;
-  sample_state_ = STATE_MEAS_START_;
   sonar_queues_ = sonar_queues;
   sonars_ = sonars;
   sonars_schedule_ = sonars_schedule;
@@ -221,8 +221,6 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
       break;
     }
   }
-  number_measurement_specs_ = sonars_size_;
-  //debug_uart->string_print((Text)"3 \r\n");
 
   // Figure out the value for *sonar_queues_size_*:
   sonar_queues_size_ = 0;
@@ -611,11 +609,6 @@ void Sonars_Controller::poll() {
 }
 
 UShort Sonars_Controller::mm_distance_get(UByte sonar_index) {
-  UShort distance = (UShort)-10;  
-  if (sonar_index < sonars_size_) {
-    Sonar *sonar = sonars_[sonar_index];
-    distance = (UShort)(sonar->distance_in_meters * (float)1000.0);
-  }
-  return distance;
+  return sonars_[sonar_index]->mm_distance_get();
 }
 

@@ -53,6 +53,7 @@ class Sonar {
   Sonar_Queue *sonar_queue_get() { return sonar_queue_; };
   Logical is_done() {return (Logical)((state_ == STATE_OFF_) ? 1 : 0); };
   void initialize();
+  UShort mm_distance_get();
   void time_out();
   void trigger();
   void trigger_setup();
@@ -61,7 +62,6 @@ class Sonar {
 
   // Public member variables (for now):
   float distance_in_meters;    // Distance in meters
-  UInteger sample_time;	       // Sample time
 
  private:
   // Constants:
@@ -128,10 +128,6 @@ class Sonars_Controller {
   static const UByte PIN_OFFSET_ = 0;  // Offset to port input register
   static const UByte DDR_OFFSET_ = 1;  // Offset to data direcection register
   static const UByte PORT_OFFSET_ = 2; // Offset to port output register
-  // States of sonar sensor acquision:
-  static const UByte STATE_MEAS_START_ = 0;
-  static const UByte STATE_WAIT_FOR_MEAS_ = 1;
-  static const UByte STATE_POST_SAMPLE_WAIT_ = 2;
 
   // Longest echo time we expect (28100 is 5  meters):
   // Define the parameters for measurement of Sonar Units
@@ -143,16 +139,16 @@ class Sonars_Controller {
   //  For very small sensor counts BEWARE!
   //
   // 30000 is about 5 meters
-  static const UInteger ECHO_MAXIMUM_ = (UInteger)28100;
+  //static const UInteger ECHO_MAXIMUM_ = (UInteger)28100;
   // Time to wait per measurement:
-  static const UInteger MEASURE_TIME_ = (UInteger)80000;
+  //static const UInteger MEASURE_TIME_ = (UInteger)80000;
   // Measurement itself was too long:
-  static const UInteger MEASURE_TOO_LONG_ = (UInteger)70000;
+  //static const UInteger MEASURE_TOO_LONG_ = (UInteger)70000;
   // One measurement each time this many uSec goes by:
-  static const UInteger SAMPLES_US_ = (UInteger)100000;
-  static const float US_TO_METERS_ = 5620.0;
+  //static const UInteger SAMPLES_US_ = (UInteger)100000;
+  //static const float US_TO_METERS_ = 5620.0;
   // A cap used in reading well after meas has finished:
-  static const float MAXIMUM_DISTANCE_CM_ = 900.0;
+  //static const float MAXIMUM_DISTANCE_CM_ = 900.0;
 
   static const UShort TIMEOUT_TICKS_ = 60000;
 
@@ -164,38 +160,27 @@ class Sonars_Controller {
   static const UByte STATE_ECHO_WAIT_ = 4;
 
   // Member variables:
-  unsigned long current_delay_data1_;
-  unsigned long current_delay_data2_;
-  int cycle_number_;
   UShort debug_flags_;
   UART *debug_uart_;
-  unsigned long full_cycle_counts_;
-  unsigned long measured_trigger_time_;
-  int number_measurement_specs_;
-  UByte sample_state_;
+  UByte first_schedule_index_;
+  UByte last_schedule_index_;
+  UShort now_ticks_;
+  UByte pin_change_interrupts_mask_;
+  UShort previous_now_ticks_;
+  UByte state_;
+  UShort start_ticks_;
+  Sonar_Queue **sonar_queues_;
+  UByte sonar_queues_size_;
   Sonar **sonars_;
   UByte *sonars_schedule_;
   UByte sonars_schedule_size_;
   UByte sonars_size_;
+
   // Debug flag masks:
   UShort error_debug_flag_;
   UShort general_debug_flag_;
   UShort results_debug_flag_;
-  UByte pin_change_interrupts_mask_;
-  Sonar_Queue **sonar_queues_;
-  UByte sonar_queues_size_;
 
-  UByte first_schedule_index_;
-  UByte last_schedule_index_;
-  UByte state_;
-  UShort start_ticks_;
-  UShort now_ticks_;
-  UShort previous_now_ticks_;
-
-  // Owned by ISRs and only inspected by consumer:
-  static unsigned int producer_index_;
-  // Owned by consumer and only inspected by producer:
-  static unsigned int consumer_index_;
 };
 
 #endif // SONAR_H_INCLUDED
