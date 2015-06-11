@@ -147,9 +147,9 @@
 ///
 /// * Use the `Sonar` constructor for each sonar module:
 ///
-///        Sonar sonar0(&PINC, 1, &b_sonar_queue, 1, &PINB, 1);
+///        Sonar sonar0(&PINC, 1, &b_sonar_queue, 1, 1);
 ///        // ...
-///        Sonar sonar9(&PIND, 2, &d_sonar_queue, 3, &PIND, 3);
+///        Sonar sonar9(&PIND, 2, &d_sonar_queue, 3, 3);
 ///
 /// * Create a null terminated `Sonar`'s list:
 ///
@@ -227,32 +227,55 @@
 
 /// @brief Construct a `Sonar_Queue` object.
 /// @param mask_index is the pin change interrupt mask number (e.g. PCMSK0,...).
-/// @param echo_base is the echo signal port PIN port address.
+/// @param echo_registers is the base register echo input pins.
 /// @param debug_uart is a UART for debugging messages.
 ///
 /// This constructor creates a sonar object that can store information
-/// about a pin change interrupt into a queue.  *mask_index* specifies the
-/// which PCMSK0, ..., PCMSK2, mask register is used.  Thus, *mask_index*
+/// about a pin change interrupt into a queue.  **mask_index** specifies the
+/// which PCMSK0, ..., PCMSK2, mask register is used.  Thus, **mask_index**
 /// specifies which set of PCINT pins are used (0=>PCINT1,...,PCINT8,
-/// 1=>PCING9,...PCINT16, and 2=>PCINT17,...PCINT24.)  *echo_port* specifies
-/// the PIN port address of the I/O port used for reading echo signals.
-/// *debug_uart* is a uart used for debugging output.
+/// 1=>PCING9,...PCINT16, and 2=>PCINT17,...PCINT24.)  **echo_registers**
+/// specifies the base address register for the echo pins I/O port.
+/// **debug_uart** is a uart used for debugging output.
 
 Sonar_Queue::Sonar_Queue(
  UByte mask_index, volatile uint8_t *echo_registers, UART *debug_uart) {
-  volatile uint8_t *change_mask_registers = &PCMSK0;
-  change_mask_register_ = change_mask_registers + mask_index;
-  consumer_index_ = 0;
+  // Save *debug_uart*, *echo_registers*, *mask_index* into private variables:
   debug_uart_ = debug_uart;
   echo_registers_ = echo_registers;
+  mask_index_ = mask_index;
+
+  // Store PCMSK0, PCMSK1, or PCMSK2 into *change_mask_register_* depending
+  // upon value of *mask_index*:
+  volatile uint8_t *change_mask_registers = &PCMSK0;
+  change_mask_register_ = change_mask_registers + mask_index;
+
+  // Compute the interrupt mask bit to be used for PCICR from *mask_index*
+  // and store into *interrupt_mask_*:
   interrupt_mask_ = (1 << mask_index);
-  mask_index_ = mask_index;	// Is *mask_index_* used by anyone?
+
+  // Zero out the consume and producer indices:
+  consumer_index_ = 0;
   producer_index_ = 0;
 }
+
+/// @brief Set the echo I/O port input pin direction.
+/// @param echo_mask is the mask of pins to set to inputs.
+///
+/// This method will set the I/O pins specified by **echo_mask** to
+/// be input bits.  This method only affects pins specified by a 1
+/// in **echo_mask**; all other pins remain unchanged.
 
 void Sonar_Queue::input_direction_set(UByte echo_mask) {
   echo_registers_[DIRECTION_] &= ~echo_mask;
 }
+
+/// @brief process a pin change interrupt.
+///
+/// This method will stuff (echo_bits, ticks) pair into the
+/// sonar queue in FIFO order.  The **consume_one**(),
+/// **echo_bits_peek**(), and **ticks_peek**() methods are used
+/// to get the data out of the queue.
 
 void Sonar_Queue::interrupt_service_routine() {
   // Grab the latest input port value:
@@ -273,7 +296,11 @@ void Sonar_Queue::interrupt_service_routine() {
   producer_index_ = (producer_index_ + 1) & QUEUE_MASK_;
 }
 
-// This routine resets the pin change mask and empties the queue.
+/// @brief Shuts down any further pin change interrupts and flush the queue.
+///
+/// This method will flush the FIFO queue and disable all interrupt
+/// change pins from further interrupts.
+
 void Sonar_Queue::shut_down() {
   // Zero out the pin change mask bits:
   *change_mask_register_ = 0;
@@ -288,16 +315,31 @@ void Sonar_Queue::shut_down() {
 /// @param trigger_registers specifies the I/O port used to trigger sonar.
 /// @param trigger_bit specifies with pin to use for sonar trigger.
 /// @param sonar_queue specifies which `Sonar_Queue` will get echo pin changes.
-/// @param echo_pin specifies which pin to use for sonar echos.
+/// @param change_bit specifies which pin change to connected to the echo pin.
+/// @param echo_bit specifies which pin to use for sonar echos.
 ///
 /// *Sonar()* constructs a sonar object that is one-to-one with a
-/// physical 
+/// physical sonar module.  **trigger_registers** specifies the I/O
+/// port that is connected to the trigger pin.  **trigger_bit** specifies
+/// which bit of the trigger I/O port is the pin to trigger with.
+/// **sonar_queue** specifies the `Sonar_Queue` object to use to collect
+/// the echo pin changes with.  **change_bit** specifies which pin of
+/// the appropriate pin change mask register is connected to the echo pin.
+/// **echo_pin** specifies which pin of the echo I/P port is connected
+/// to the echo pin.
+///
+/// The **change_bit** and **echo_bit** can be a bit confusing.  On most
+/// Atmel AVR processors, the pin change mask register has a one-to-one
+/// correspondence with pins in the pin change mask register.  This is
+/// true for the ATmega328 processor.  For other processors, like the
+/// ATmega2560, the correspondence is not one-to-one.  You will have to
+/// look carefully at processor data sheet and the schematic to figure
+/// out which pins to use.
 
 Sonar::Sonar(volatile uint8_t *trigger_registers, UByte trigger_bit,
  Sonar_Queue *sonar_queue, UByte change_bit, UByte echo_bit) {
-  change_mask_ = (1 << change_bit);
+  pin_change_mask_ = (1 << change_bit);
   debug_uart_ = sonar_queue->debug_uart_get();
-  distance_in_meters = (float)0.0;
   echo_start_ticks_ = 0;
   echo_end_ticks_ = 0;
   echo_mask_ = (1 << echo_bit);
@@ -306,7 +348,10 @@ Sonar::Sonar(volatile uint8_t *trigger_registers, UByte trigger_bit,
   trigger_mask_ = (1 << trigger_bit);
 }
 
-// Initialize the appropriate I/O pins for a *Sonar*:
+/// @brief Initialize the sonar.
+///
+/// This method initializes the trigger and echo pins for the sonar.
+
 void Sonar::initialize() {
     // Set the trigger pin to be an output pin:
     trigger_registers_[OUTPUT_] &= ~trigger_mask_;   // Clear first
@@ -317,20 +362,28 @@ void Sonar::initialize() {
     sonar_queue_->input_direction_set(echo_mask_);
 }
 
-// The speed of sound is 340.29 M/Sec at sea level.
-// A sonar echo is requires a round trip to the object and back.
-// Thus, this distance is divided by 2.  Our clock ticks at 4uSec/tick.
-// Thus:
-//
-//   340.29 M    1    1000 mM      1 Sec.       4 uSec.             mM
-//   ======== * === * ======= * ============= * =======  =  .68048 ====
-//     1 Sec.    2      1 M     1000000 uSec.   1 Tick             Tick
+/// @brief Return the distance in millimeters
+/// @returns the distance in millimeters.
+///
+/// This method will return the last successful sonar measurement
+/// in millimeters.
 
 UShort Sonar::mm_distance_get() {
+  // The speed of sound is 340.29 M/Sec at sea level.
+  // A sonar echo is requires a round trip to the object and back.
+  // Thus, this distance is divided by 2.  Our clock ticks at 4uSec/tick.
+  // Thus:
+  //
+  //   340.29 M    1    1000 mM      1 Sec.       4 uSec.             mM
+  //   ======== * === * ======= * ============= * =======  =  .68048 ====
+  //     1 Sec.    2      1 M     1000000 uSec.   1 Tick             Tick
+
   return ((echo_end_ticks_ - echo_start_ticks_) * 68) / 100;
 }
 
-// Set distance to 0xffff and if the sonar is still active.
+/// @brief Marks that the current sonar measurement has timed out.
+///
+/// This method will mark the current sonar measurement as timed out.
 void Sonar::time_out() {
   if (state_ != STATE_OFF_) {
     echo_start_ticks_ = 0;
@@ -339,6 +392,10 @@ void Sonar::time_out() {
   }
 }
 
+/// @brief Trigger the sonar.
+///
+/// This method will cause a sonar trigger pulse to be generated.
+/// The **trigger_setup**() method should be called prior to this method.
 void Sonar::trigger() {
   // Set trigger bit high:
   trigger_registers_[OUTPUT_] |= trigger_mask_;
@@ -353,6 +410,10 @@ void Sonar::trigger() {
   trigger_registers_[OUTPUT_] &= ~trigger_mask_;
 }
 
+/// @brief Prepare the sonar to be triggered.
+///
+/// This method will prepare the sonar to be triggered.
+/// This method should be called prior to the **trigger** method.
 void Sonar::trigger_setup() {
 
   // Verify that echo pulse line is zero:
@@ -370,7 +431,7 @@ void Sonar::trigger_setup() {
     trigger_registers_[OUTPUT_] &= ~trigger_mask_;
 
     // Set the change bit for the *sonar_queue_*:
-    sonar_queue_->change_mask_set(change_mask_);
+    sonar_queue_->pin_change_mask_set(pin_change_mask_);
 
     // Mark this sonar as active:
     state_ = STATE_ECHO_RISE_WAIT_;
@@ -378,19 +439,30 @@ void Sonar::trigger_setup() {
   }
 }
 
-void Sonar::update(UShort ticks, UByte echo, Sonar_Queue *sonar_queue) {
+/// @brief Update the sonar state.
+/// @param ticks is the current ticks from the sonar queue.
+/// @param echo_bits is the current echo bits from the sonar queue.
+/// @param sonar_queue is the associated `Sonar_Queue` object.
+///
+/// This method will update the state of the sonar using **ticks** and
+/// **echo_bits** as additional input.  **sonar_queue** is only used
+/// to get access to the debug uart.
+void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
   //debug_uart_->integer_print(echo);
   //debug_uart_->string_print((Text)" ");
   //debug_uart_->integer_print(echo_mask_);
 
+  // The only states we care about are for rising and falling echo edges:
   switch (state_) {
     case STATE_OFF_: {
       //debug_uart_->string_print((Text)"%");
       break;
     }
     case STATE_ECHO_RISE_WAIT_: {
-      if ((echo & echo_mask_) != 0) {
-	// We have a rising edge:
+      // We are waiting for the echo pin to go from 0 to 1:
+      if ((echo_bits & echo_mask_) != 0) {
+	// Since we have a rising edge, we simply remember when it
+	// occurred and wait for the subsequent falling edge:
 	echo_start_ticks_ = ticks;
 	state_ = STATE_ECHO_FALL_WAIT_;
 	//debug_uart_->string_print((Text)"^");
@@ -398,12 +470,11 @@ void Sonar::update(UShort ticks, UByte echo, Sonar_Queue *sonar_queue) {
       break;
     }
     case STATE_ECHO_FALL_WAIT_: {
-      if ((echo & ~echo_mask_) == 0) {
-	// We have a falling edge:
+      // We are waiting for the echo pin to go from 1 to 0:
+      if ((echo_bits & ~echo_mask_) == 0) {
+	// Since we have a falling edge, we simply remember when it
+	// occurred and mark that we are done:
 	echo_end_ticks_ = ticks;
-	// If we want, we can compute the distance here:
-	distance_in_meters =
-	 (float)(echo_end_ticks_ - echo_start_ticks_) / 1000.0;
 	state_ = STATE_OFF_;
 	//debug_uart_->string_print((Text)"v");
       }
@@ -420,15 +491,11 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
   //debug_uart->string_print((Text)"=>Sonars_Controller()!\r\n");
 
   // Initialize various member variables:
-  debug_flags_ = 0;
   debug_uart_ = debug_uart;
   sonar_queues_ = sonar_queues;
   sonars_ = sonars;
   sonars_schedule_ = sonars_schedule;
   state_ = STATE_SHUT_DOWN_;
-  general_debug_flag_ = 0;
-  error_debug_flag_ = 0;
-  results_debug_flag_ = 0;
   //debug_uart->string_print((Text)"1 \r\n");
 
   // Figure out the value for *sonars_size_*:
@@ -473,69 +540,10 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
 
 // *Sonars_Controller* static variables and method(s):
 
-// All the interrupt code is done as static member variables and
-// static member functions.
-
-// Define the circular queue members and indexes.
-// Remember! this is highly optimized so no fancy classes used here folks!
-//
-// Queue Rules:
-//  - The index values increment for each entry and roll back to 0 when equal
-//    to USONAR_QUEUE_LEN
-//    It is possible to have consumer index near end and producer near start
-//    index of 0 which means
-//    the entries are rolling around but are still all valid.  Producers and
-//    consumer MUST deal with this.
-//  - Producer may only put in entries if 2 or more spaces are open
-//  - Producer must drop entries if queue is full
-//  - Producer places data at next index past current producer index in both
-//    arrays and THEN bumps producer index to point to that index when values
-//    are intact.
-//  - Consumer may only read entries up to and including current producer index.
-//  - Consumer may only bump consumer index to one more than what has just
-//    been processed.  Consumer must NEVER try to read the values once
-//    consumer has bumped consumer index past
-//
-// Queue Member Descriptions
-//  echo_edge_queue_[]        ISR fed queue to hold edge change detections
-//                            produced in fast ISR.
-//                            Entires are 30 bit timestamp with lower 2
-//                            bits showing the bank that changed
-//                            Note that the timestamp will roll over in
-//                            around 70 min 
-//  echo_changed_pins_[]      Not used yet!  Is to hold a 1 for each pin
-//                            that has changed at this timestamp.
-//                            Bits 23:0 are to be placed properly by each ISR
-//
-// The Echo timestamp is saved with the least sig 2 bits being set to the
-// channel for this timestamp.  We do not know which bits changed, we only
-// know at least one changed in this bank.  We also have a word of info to
-//  hold other info we may want the ISR to return.  So this means the sonar
-// cycling needs to be careful to only do one sample at a time from any one
-// bank.
-
-// We found that the nice producer consumer queue has to be reset down wo
-// just do one meas per loop and reset queue each time so we get 2 edges
-
-// *Sonars_Controller* methods:
-
-// Set the *debug_flags_* variable:
-
-UByte Sonars_Controller::change_mask_get(UByte sonar_index) {
+UByte Sonars_Controller::pin_change_mask_get(UByte sonar_index) {
   Sonar *sonar = sonars_[sonar_index];
-  UByte change_mask = sonar->change_mask_get();
+  UByte change_mask = sonar->pin_change_mask_get();
   return change_mask;
-}
-
-void Sonars_Controller::debug_flags_set(UShort debug_flags) {
-  debug_flags_ = debug_flags;
-}
-
-void Sonars_Controller::debug_flag_values_set(UShort error_debug_flag,
- UShort general_debug_flag, UShort results_debug_flag) {
-  error_debug_flag_ = error_debug_flag;
-  general_debug_flag_ = general_debug_flag;
-  results_debug_flag_ = results_debug_flag;
 }
 
 UByte Sonars_Controller::echo_mask_get(UByte sonar_index) {
@@ -551,30 +559,8 @@ UByte Sonars_Controller::mask_index_get(UByte sonar_index) {
   return mask_index;
 }
 
-// Initialize the I/O port for the sonar:
+/// @brief Initialize the controller.
 
-// Trigger the given ultrasonic sonar in the given spec table entry
-// The sonar unit number is given to this routine as written on PC board
-// This routine shields the caller from knowing the hardware pin
-//
-// Return value is system clock in microseconds for when the trigger was sent
-// Note that the sonar itself will not reply for up to a few hundred
-// microseconds
-
-unsigned long Sonars_Controller::measurement_trigger(UByte sonar_index) {
-  // Make sure we access a valid *sonar*:
-  if (sonar_index >= sonars_size_) {
-    sonar_index = 0;
-  }
-  Sonar *sonar = sonars_[sonar_index];
-
-  // Trigger the measurement:
-  sonar->measurement_trigger();
-
-  return micros() | 1;
-}
-
-// Initialize the I/O pins used by the sonar controller:
 void Sonars_Controller::initialize() {
   // Initialize each *sonar* and compute *pin_change_interrrupts_mask_*:
   pin_change_interrupts_mask_ = 0;
