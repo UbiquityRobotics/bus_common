@@ -446,6 +446,9 @@ void Sonars_Controller::poll() {
 	sonar_queues_[queue_index]->shut_down();
       }
 
+      // Disable pin change interrupts:
+      PCICR &= ~pin_change_interrupts_mask_;
+
       // Next, select another group of sonars to trigger:
       state_ = STATE_GROUP_NEXT_;
       break;
@@ -498,7 +501,7 @@ void Sonars_Controller::poll() {
       now_ticks_ = start_ticks_;
 
       // Enable the pin change interrupts:
-      PCICR = pin_change_interrupts_mask_;
+      PCICR |= pin_change_interrupts_mask_;
 
       // Trigger all the sonars:
       for (UByte schedule_index = first_schedule_index_;
