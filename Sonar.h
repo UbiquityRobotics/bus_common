@@ -9,13 +9,15 @@
 class Sonar_Queue {
  public:
   Sonar_Queue(UByte mask_index,
-   volatile uint8_t *io_port_base, UART *debug_uart);
+   volatile uint8_t *echo_base, UART *debug_uart);
   void change_mask_set(UByte change_mask)
    { *change_mask_register_ |= change_mask; };
   void consume_one() { consumer_index_ = (consumer_index_ + 1) & QUEUE_MASK_; };
   UART *debug_uart_get() {return debug_uart_; } ;
+  UByte echo_bits_get() {return echo_base_[PORT_INDEX_]; };
   UByte echos_peek() {return echos_[consumer_index_]; };
   //void enable();
+  void input_direction_set(UByte echo_mask);
   void interrupt_service_routine();
   Logical is_empty() {return producer_index_ == consumer_index_; };
   UByte mask_index_get() { return mask_index_; };
@@ -33,7 +35,7 @@ class Sonar_Queue {
   volatile uint8_t *change_mask_register_;
   UByte echos_[QUEUE_SIZE_];
   UART *debug_uart_;
-  volatile uint8_t *io_port_base_;
+  volatile uint8_t *echo_base_;
   UByte interrupt_mask_;
   UByte mask_index_;
   UByte producer_index_;
@@ -46,8 +48,7 @@ class Sonar {
  public:
   // Public constructors and member functions:
   Sonar(volatile uint8_t *trigger_base, UByte trigger_mask,
-   Sonar_Queue *sonar_queue, UByte change_bit,
-   volatile uint8_t *echo_base, UByte echo_mask);
+   Sonar_Queue *sonar_queue, UByte change_bit, UByte echo_mask);
   UByte change_mask_get() { return change_mask_; };
   UByte echo_mask_get() { return echo_mask_; };
   Sonar_Queue *sonar_queue_get() { return sonar_queue_; };

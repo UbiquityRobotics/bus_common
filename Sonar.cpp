@@ -1,52 +1,262 @@
 // Copyright (c) 2015 by Mark Johnston.  All rights reserved.
 // Copyright (c) 2015 by Wayne Gramlich.  All rights reserved.
 
-// This is the shared sonar code for the bus_sonar10 and bus_loki boards.
-// Class to pull together management routines for Loki ultrasonic sensor
-// distance measurements
-//
-// This is really to make things a little bit more contained but does not
-// stand on it's own.  This is specific to use of high speed ISR doing
-// acquisition of data so this class must use external fast edge detect
-// queue which is not 'ideal' but is acceptable
+/// @file
+///
+/// # `Sonars_Controller` Module
+///
+/// The `Sonars_Controller` module is used to control a bunch of sonar
+/// modules with separate trigger and echo pins.  The HC-SR04 is the
+/// nominal module to be used.
+///
+/// ## Documentation and Code Formatting
+///
+/// The documentation is mostly written in markdown format:
+///
+///     http://daringfireball.net/projects/markdown/
+///
+/// A short summary of markdown is:
+///
+/// * Back quotes (e.g. \``back_quotes`\`)  are used to change to a
+///   `fixed pitch code` font.
+///
+/// * Single asterisks (e.g. `*italics*`) are used for an *italics* font.
+/// 
+/// * Double asterisks (e.g. `**bold**`)  are used for a **bold** font.
+///
+/// * A line starting with an asterisk is an itemized list bullet item.
+///
+/// * Lines starting with a greater than sign (i.e. `>`) indicate block
+///   quoted indented text.  This the same way it is done in E-mail.
+///
+/// * Lines that start with one or more "hash" characters (i.e. `#`)
+///   indicate a
+///   heading with the number indicating heading level.
+///
+/// * Lines indented by 8 spaces or more are code samples.
+///
+/// * HTML markup is used for tables, special characters, etc.
+///
+/// When markdown is embedded in C/C++ code, it is preceded by a
+/// triple slash comment on each line (i.e. `///`).  This is standard
+/// `doxygen` format (see below.)
+///
+/// There are many C/C++ coding standards out there.  The ones used for
+/// this code are:
+///
+/// * Indentation is 2 spaces per code level.
+///
+/// * Lines are no longer that 80 characters.
+///
+/// * Continuation lines are indented by 1 space beyond the current
+///   code block indent level.
+///
+/// * K&R curly brace indentation is used.
+///
+/// * All single line code blocks are enclosed in curly braces.
+///
+/// * All types and classes start with a capital letter (e.g. `Sonar`,
+///   `Sonar_Queue`, etc.)  `CamalCase` types are not used.  Instead,
+///   Underscores separate words in type names (e.g. `Sonar_Queue`,
+///   `Sonars_Controller`, etc.)
+///
+/// * The 8/16/32/64 bit signed types are `Byte`, `Short`, `Integer`,
+///   and `Long`.  The unsigned 8/16/32/64 bit signed types are `UByte`,
+///   `UShort`, `UInteger`, and `ULong`.  `Character` and `Text` are used
+///   instead of `char` and `char *`.  These types are currently defined
+///   in the file `bus_common/bus_slave.h`.
+///
+/// * `Logical` is the type used for true and false.
+///
+/// * All variables start with a lower case letter and use underscores
+///   to separate words (e.g. `echo_mask`, `sonars_schedule`, etc.
+///   Words tend to be spelled out in their entirety with no syllable
+///   or vowel dropping.  `camelCaseVariable` names are not used.
+///
+/// * Private member functions and variables are marked with a trailing
+///   underscore (e.g. `producer_index_`, `consumer_index_`, etc.)
+///
+/// * Constants are in all upper case.  They are mostly declared as
+///   `static const` rather that #`define`.
+///
+/// * #`ifdef` are discouraged.  If used they are indented like any
+///   other language construct.
+///
+/// * In general, a "paragraph" style is used for each code block.
+///   In this style, a comment precedes each code block that explains
+///   what the code block is trying to accomplish.
+///
+/// That pretty much covers the C++ coding style.
+///
+/// In addition, `doxygen` is used to produce HTML class documenation.
+///
+///     http://www.doxygen.org/
+///
+/// By the way, the more recent versions of `doxygen` use markdown syntax
+/// for font changes and the like.  The `doxygen` formatting style is:
+///
+/// * C++ code uses triple forward slash (e.g. `///`) to indicate
+///   `doxygen` comments.
+///
+/// * The at sign (e.g. `@`) is used to indicate `doxygen` commands.
+///   (Note that the `doxygen` manual tends to use the backslash format
+///   (e.g. `\param` instead of `@param`.)
+///
+/// ## `Sonars_Controller` Overview
+///
+/// The `Sonars_Controller` system is broken into three C++ classes:
+///
+/// * `Sonar_Queue`.  There is one `Sonar_Queue` for each pin change
+///   interrupt vector that is used.  This class basically stuffs
+///   (time, port) into a queue.  The queue is emptied by the higher
+///   level `Sonars_Controller::poll()` method.
+///
+/// * `Sonar`.  There is one `Sonar` for each physical sonar object.
+///   This class specifies the trigger pin, the echo pin, and which
+///   `Sonar_Queue` will collect the echo pin changes.
+///
+/// * `Sonar_Controller`.  There is only one `Sonar_Controller`.
+///   This class takes a list of `Sonar_Queue`'s, a list of `Sonar`'s,
+///   A something called the "sonars schedule" and manages trigger
+///   the sonars and timing the echo returns.
+///
+/// ## Code Usage
+///
+/// To use this code you need to do the following.
+///
+/// * Add #`include <Sonar.h>`:
+///
+///        #include <Sonar.h>
+///
+/// * Define a debug uart.  It can be either a null UART or a real UART:
+///
+///        NULL_UART null_uart;
+///
+/// * Use the `Sonar_Queue` constructor to define each needed sonar queue.
+///
+///        Sonar_Queue b_sonar_queue(0, &PINB, debug_uart);
+///        Sonar_Queue d_sonar_queue(2, &PIND, debug_uart);
+///
+/// * Create a null terminated list of `Sonar_Queue`'s:
+///
+///        Sonar_Queue *sonar_queues[] = {
+///          &b_sonar_queue,
+///          &d_sonar_queue,
+///          (Sonar_Queue *)0,
+///        };
+///
+/// * Use the `Sonar` constructor for each sonar module:
+///
+///        Sonar sonar0(&PINC, 1, &b_sonar_queue, 1, &PINB, 1);
+///        // ...
+///        Sonar sonar9(&PIND, 2, &d_sonar_queue, 3, &PIND, 3);
+///
+/// * Create a null terminated `Sonar`'s list:
+///
+///        Sonar *sonars[] = {
+///          &sonar0,
+///          // ...
+///          &sonar9,
+///         (Sonar *)0,
+///        };
+///
+/// * Create a sonars schedule.  This a byte string that specifies
+///   groups of sonars to trigger at the same time:
+///
+///        UByte sonars_schedule[] = {
+///          0, 5, Sonars_Controller::GROUP_END,
+///          /...
+///          4, 9, Sonars_Controller::GROUP_END,
+///          Sonars_Controller::SCHEDULE_END,
+///        };
+///
+///   Each sonar is specified by it index in the sonars list.
+///   The end of a group is indicated by `Sonars_Controller::GROUP_END`.
+///   The list end is indicated  by `Sonars_Controller::SCHEDULE_END`.
+///
+/// * Use the `Sonar_Constructor` constructor to create the one and
+///    only `Sonar_Constructor` object:
+///
+///       Sonars_Controller sonars_controller((UART *)debug_uart,
+///        sonars, sonar_queues, sonars_schedule);
+///
+/// * Create an interrupt service routine for each `Sonar_Queue` object.
+///   This simply calls `Sonar_Queue::interrupt_service_routine()`:
+///
+///        ISR(PCINT0_vect) {
+///          b_sonar_queue.interrupt_service_routine();
+///        }
+///
+/// * Make sure that `Sonars_Controller::initialize()` is called once.
+///
+///        void setup() {
+///            sonars_controller.initialize();
+///        }
+///
+/// * Make sure that `Sonars_Controller::poll()` is called on a regular basis:
+///
+///        void loop() {
+///            sonars_controller.poll();
+///        }
+///
+/// That is all.
+///
+/// {Talk about Sonar modules.}
+///
+/// ## `Sonar_Queue` Details.
+///
+/// The `Sonar_Queue` object implements a fixed size buffer that is
+/// used as a FIFO queue.  Each time a pin change interrupt occurs
+/// the current echo port pins and a time stamp are entered into the
+/// queue.
+///
+/// Time stamp is provided by the 16-bit Timer 1 counter.  This timer
+/// is configured by the `Sonar_Controller` to increment every 4&mu;Sec.
+/// (This assumes a 16MHz system clock.)
+///
+/// Each I/O port is controlled by three registers called PIN, DDR,
+/// and PORT, where PIN is the port input register, DDR is the data
+/// direction register, and PORT is the port output register.  These
+/// three registers always occur as three consecutive registers.  We
+/// always specify an I/O port
 
-// ***************************************************************************
-// UltraSonic Sonar Code
-//
-// One part of the code must be extremely fast code used in ISRs to log edge
-// detections
-//
-// A second part of the code is used in background to do round robin sonar
-// scans and keep track of latest good measurements of distance so they can
-// be fetched by interested subsystems.
-//
-// Note: The background code could be moved into a separate header and file
-// for the class.
-//
-// Some in-memory history of last sample times and readings in meters
-// These tables are organized by sonar number and not by measurement cycle
-// number.  Also the index is the sonar number so entry [0] is zero
-
-#include "Arduino.h"
-#include "Sonar.h"
+#include <Arduino.h>
+#include <Sonar.h>
 
 // *Sonar_Queue* constructor and methods:
 
+/// @brief Construct a `Sonar_Queue` object.
+/// @param mask_index is the pin change interrupt mask number (e.g. PCMSK0,...).
+/// @param echo_base is the echo signal port PIN port address.
+/// @param debug_uart is a UART for debugging messages.
+///
+/// This constructor creates a sonar object that can store information
+/// about a pin change interrupt into a queue.  *mask_index* specifies the
+/// which PCMSK0, ..., PCMSK2, mask register is used.  Thus, *mask_index*
+/// specifies which set of PCINT pins are used (0=>PCINT1,...,PCINT8,
+/// 1=>PCING9,...PCINT16, and 2=>PCINT17,...PCINT24.)  *echo_port* specifies
+/// the PIN port address of the I/O port used for reading echo signals.
+/// *debug_uart* is a uart used for debugging output.
+
 Sonar_Queue::Sonar_Queue(
- UByte mask_index, volatile uint8_t *io_port_base, UART *debug_uart) {
+ UByte mask_index, volatile uint8_t *echo_base, UART *debug_uart) {
   volatile uint8_t *change_mask_base = &PCMSK0;
   change_mask_register_ = change_mask_base + mask_index;
   consumer_index_ = 0;
   debug_uart_ = debug_uart;
   interrupt_mask_ = (1 << mask_index);
-  io_port_base_ = io_port_base;
+  echo_base_ = echo_base;
   mask_index_ = mask_index;	// Is *mask_index_* used by anyone?
   producer_index_ = 0;
 }
 
+void Sonar_Queue::input_direction_set(UByte echo_mask) {
+  echo_base_[DDR_INDEX_] &= ~echo_mask;
+}
+
 void Sonar_Queue::interrupt_service_routine() {
   // Grab the latest input port value:
-  UByte echo = io_port_base_[PIN_INDEX_];
+  UByte echo = echo_base_[PIN_INDEX_];
 
   // The act of reading *TCNT1L* causes *TCNT1H* to be cached into
   // a temporary register.  Thus, by reading *TCNT1L* before *TCNT1H*,
@@ -74,15 +284,22 @@ void Sonar_Queue::shut_down() {
 
 // *Sonar* constructor and methods:
 
+/// @brief constructs a new *Sonar* object.
+/// @param trigger_base specifies the I/O port used to trigger sonar.
+/// @param trigger_bit specifies with pin to use for sonar trigger.
+/// @param sonar_queue specifies which `Sonar_Queue` will get echo pin changes.
+/// @param echo_pin specifies which pin to use for sonar echos.
+///
+/// *Sonar()* constructs a sonar object that is one-to-one with a
+/// physical 
+
 Sonar::Sonar(volatile uint8_t *trigger_base, UByte trigger_bit,
- Sonar_Queue *sonar_queue, UByte change_bit,
- volatile uint8_t *echo_base, UByte echo_bit) {
+ Sonar_Queue *sonar_queue, UByte change_bit, UByte echo_bit) {
   change_mask_ = (1 << change_bit);
   debug_uart_ = sonar_queue->debug_uart_get();
   distance_in_meters = (float)0.0;
   echo_start_ticks_ = 0;
   echo_end_ticks_ = 0;
-  echo_base_ = echo_base;
   echo_mask_ = (1 << echo_bit);
   sonar_queue_ = sonar_queue;
   trigger_base_ = trigger_base;
@@ -96,7 +313,8 @@ void Sonar::initialize() {
     trigger_base_[DDR_OFFSET_] |= trigger_mask_;   // Set pin to be an output
 
     // Set the echos to be input pins:
-    echo_base_[DDR_OFFSET_] &= ~echo_mask_;	   // Set pin to be an input
+    //echo_base_[DDR_OFFSET_] &= ~echo_mask_;
+    sonar_queue_->input_direction_set(echo_mask_);
 }
 
 // The speed of sound is 340.29 M/Sec at sea level.
@@ -124,7 +342,8 @@ void Sonar::time_out() {
 void Sonar::trigger_setup() {
 
   // Verify that echo pulse line is zero:
-  UByte echo_bits = echo_base_[PORT_OFFSET_];
+  //UByte echo_bits = echo_base_[PORT_OFFSET_];
+  UByte echo_bits = sonar_queue_->echo_bits_get();
   if ((echo_bits & echo_mask_) != 0) {
     // The sonar is still returning an echo.  Perhaps this is from the
     // previous iteration.  Whatever, we can't trigger the sonar until
