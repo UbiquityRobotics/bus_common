@@ -239,24 +239,24 @@
 /// *debug_uart* is a uart used for debugging output.
 
 Sonar_Queue::Sonar_Queue(
- UByte mask_index, volatile uint8_t *echo_base, UART *debug_uart) {
-  volatile uint8_t *change_mask_base = &PCMSK0;
-  change_mask_register_ = change_mask_base + mask_index;
+ UByte mask_index, volatile uint8_t *echo_registers, UART *debug_uart) {
+  volatile uint8_t *change_mask_registers = &PCMSK0;
+  change_mask_register_ = change_mask_registers + mask_index;
   consumer_index_ = 0;
   debug_uart_ = debug_uart;
+  echo_registers_ = echo_registers;
   interrupt_mask_ = (1 << mask_index);
-  echo_base_ = echo_base;
   mask_index_ = mask_index;	// Is *mask_index_* used by anyone?
   producer_index_ = 0;
 }
 
 void Sonar_Queue::input_direction_set(UByte echo_mask) {
-  echo_base_[DDR_INDEX_] &= ~echo_mask;
+  echo_registers_[DIRECTION_] &= ~echo_mask;
 }
 
 void Sonar_Queue::interrupt_service_routine() {
   // Grab the latest input port value:
-  UByte echo = echo_base_[PIN_INDEX_];
+  UByte echo = echo_registers_[INPUT_];
 
   // The act of reading *TCNT1L* causes *TCNT1H* to be cached into
   // a temporary register.  Thus, by reading *TCNT1L* before *TCNT1H*,
@@ -285,7 +285,7 @@ void Sonar_Queue::shut_down() {
 // *Sonar* constructor and methods:
 
 /// @brief constructs a new *Sonar* object.
-/// @param trigger_base specifies the I/O port used to trigger sonar.
+/// @param trigger_registers specifies the I/O port used to trigger sonar.
 /// @param trigger_bit specifies with pin to use for sonar trigger.
 /// @param sonar_queue specifies which `Sonar_Queue` will get echo pin changes.
 /// @param echo_pin specifies which pin to use for sonar echos.
@@ -293,7 +293,7 @@ void Sonar_Queue::shut_down() {
 /// *Sonar()* constructs a sonar object that is one-to-one with a
 /// physical 
 
-Sonar::Sonar(volatile uint8_t *trigger_base, UByte trigger_bit,
+Sonar::Sonar(volatile uint8_t *trigger_registers, UByte trigger_bit,
  Sonar_Queue *sonar_queue, UByte change_bit, UByte echo_bit) {
   change_mask_ = (1 << change_bit);
   debug_uart_ = sonar_queue->debug_uart_get();
@@ -302,15 +302,15 @@ Sonar::Sonar(volatile uint8_t *trigger_base, UByte trigger_bit,
   echo_end_ticks_ = 0;
   echo_mask_ = (1 << echo_bit);
   sonar_queue_ = sonar_queue;
-  trigger_base_ = trigger_base;
+  trigger_registers_ = trigger_registers;
   trigger_mask_ = (1 << trigger_bit);
 }
 
 // Initialize the appropriate I/O pins for a *Sonar*:
 void Sonar::initialize() {
-    // Set the triggers to be output pins:
-    trigger_base_[PORT_OFFSET_] &= ~trigger_mask_; // Clear output bit
-    trigger_base_[DDR_OFFSET_] |= trigger_mask_;   // Set pin to be an output
+    // Set the trigger pin to be an output pin:
+    trigger_registers_[OUTPUT_] &= ~trigger_mask_;   // Clear first
+    trigger_registers_[DIRECTION_] |= trigger_mask_; // 1=>output;0=>input
 
     // Set the echos to be input pins:
     //echo_base_[DDR_OFFSET_] &= ~echo_mask_;
@@ -339,10 +339,23 @@ void Sonar::time_out() {
   }
 }
 
+void Sonar::trigger() {
+  // Set trigger bit high:
+  trigger_registers_[OUTPUT_] |= trigger_mask_;
+
+  // Wait for *TRIGGER_TICKS_* to elapse:
+  UShort now = TCNT1;
+  while (TCNT1 - now < TRIGGER_TICKS_) {
+    // do nothing:
+  }
+
+  // Clear trigger_bit:
+  trigger_registers_[OUTPUT_] &= ~trigger_mask_;
+}
+
 void Sonar::trigger_setup() {
 
   // Verify that echo pulse line is zero:
-  //UByte echo_bits = echo_base_[PORT_OFFSET_];
   UByte echo_bits = sonar_queue_->echo_bits_get();
   if ((echo_bits & echo_mask_) != 0) {
     // The sonar is still returning an echo.  Perhaps this is from the
@@ -354,7 +367,7 @@ void Sonar::trigger_setup() {
     // Echo pulse is low.  We can activate this sonar:
 
     // Clear the trigger bit:
-    trigger_base_[PORT_OFFSET_] &= ~trigger_mask_;
+    trigger_registers_[OUTPUT_] &= ~trigger_mask_;
 
     // Set the change bit for the *sonar_queue_*:
     sonar_queue_->change_mask_set(change_mask_);
@@ -363,20 +376,6 @@ void Sonar::trigger_setup() {
     state_ = STATE_ECHO_RISE_WAIT_;
     //debug_uart_->string_print((Text)"+");
   }
-}
-
-void Sonar::trigger() {
-  // Set trigger bit high:
-  trigger_base_[PORT_OFFSET_] |= trigger_mask_;
-
-  // Wait for *TRIGGER_TICKS_* to elapse:
-  UShort now = TCNT1;
-  while (TCNT1 - now < TRIGGER_TICKS_) {
-    // do nothing:
-  }
-
-  // Clear trigger_bit:
-  trigger_base_[PORT_OFFSET_] &= ~trigger_mask_;
 }
 
 void Sonar::update(UShort ticks, UByte echo, Sonar_Queue *sonar_queue) {

@@ -9,12 +9,12 @@
 class Sonar_Queue {
  public:
   Sonar_Queue(UByte mask_index,
-   volatile uint8_t *echo_base, UART *debug_uart);
+   volatile uint8_t *echo_registers, UART *debug_uart);
   void change_mask_set(UByte change_mask)
    { *change_mask_register_ |= change_mask; };
   void consume_one() { consumer_index_ = (consumer_index_ + 1) & QUEUE_MASK_; };
   UART *debug_uart_get() {return debug_uart_; } ;
-  UByte echo_bits_get() {return echo_base_[PORT_INDEX_]; };
+  UByte echo_bits_get() {return echo_registers_[INPUT_]; };
   UByte echos_peek() {return echos_[consumer_index_]; };
   //void enable();
   void input_direction_set(UByte echo_mask);
@@ -27,15 +27,15 @@ class Sonar_Queue {
   static const UByte QUEUE_POWER_ = 4;
   static const UByte QUEUE_SIZE_ = 1 << QUEUE_POWER_;
   static const UByte QUEUE_MASK_ = QUEUE_SIZE_ - 1;
-  static const UByte PIN_INDEX_ = 0;
-  static const UByte DDR_INDEX_ = 1;
-  static const UByte PORT_INDEX_ = 2;
+  static const UByte INPUT_ = 0;
+  static const UByte DIRECTION_ = 1;
+  static const UByte OUTPUT_ = 2;
 
   UByte consumer_index_;
   volatile uint8_t *change_mask_register_;
   UByte echos_[QUEUE_SIZE_];
   UART *debug_uart_;
-  volatile uint8_t *echo_base_;
+  volatile uint8_t *echo_registers_;
   UByte interrupt_mask_;
   UByte mask_index_;
   UByte producer_index_;
@@ -47,7 +47,7 @@ class Sonar_Queue {
 class Sonar {
  public:
   // Public constructors and member functions:
-  Sonar(volatile uint8_t *trigger_base, UByte trigger_mask,
+  Sonar(volatile uint8_t *trigger_registers, UByte trigger_mask,
    Sonar_Queue *sonar_queue, UByte change_bit, UByte echo_mask);
   UByte change_mask_get() { return change_mask_; };
   UByte echo_mask_get() { return echo_mask_; };
@@ -66,9 +66,9 @@ class Sonar {
 
  private:
   // Constants:
-  static const UByte PIN_OFFSET_ = 0;       // Offset to port input register
-  static const UByte DDR_OFFSET_ = 1;       // Offset to data direcction reg.
-  static const UByte PORT_OFFSET_ = 2;      // Offset to port output register
+  static const UByte INPUT_ = 0;            // Offset to port input register
+  static const UByte DIRECTION_ = 1;        // Offset to data direcction reg.
+  static const UByte OUTPUT_ = 2;           // Offset to port output register
   static const UShort TRIG_PRE_LOW_US_ = 4; // Pre-trigger low hold time
   static const UShort TRIG_HIGH_US_ = 20;   // Trigger high hold time
   static const UByte STATE_OFF_ = 0;
@@ -85,7 +85,7 @@ class Sonar {
   volatile uint8_t *echo_base_; // Base address of echo registers
   UByte echo_mask_;             // Mask to use to trigger pin.
   Sonar_Queue *sonar_queue_;    // Queue for sonar changes
-  volatile uint8_t *trigger_base_; // Bass address trigger registers
+  volatile uint8_t *trigger_registers_; // Bass address trigger registers
   UByte trigger_mask_;          // Mask to use to trigger pin.
 };
 
@@ -126,9 +126,9 @@ class Sonars_Controller {
 
  private:
   // Constants:
-  static const UByte PIN_OFFSET_ = 0;  // Offset to port input register
-  static const UByte DDR_OFFSET_ = 1;  // Offset to data direcection register
-  static const UByte PORT_OFFSET_ = 2; // Offset to port output register
+  static const UByte INPUT_ = 0;  // Offset to port input register
+  static const UByte DIRECTION_ = 1;  // Offset to data direcection register
+  static const UByte OUTPUT_ = 2; // Offset to port output register
 
   // Longest echo time we expect (28100 is 5  meters):
   // Define the parameters for measurement of Sonar Units
