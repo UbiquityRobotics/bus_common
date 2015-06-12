@@ -224,48 +224,18 @@
 /// * `n` is the bit number of the port (e.g. `0`, `1`, ..., `7`),
 ///
 /// * `m` is the pin change interrupt number.  This number is from
-///   `1` through `24`.  
+///   `0` through `23`.  
 ///
 /// `x` and `n` are easy to understand.  The `m` number needs to be
 /// converted into a mask index register and bit number.  The process
-/// is to 1 from `m` and mask off the appropriate bits.  Thus,
+/// is to mask off the appropriate bits.  Thus,
 ///
-/// * `b` = (`m` - 1) & 7   // The low order 3 bits
+/// * `b` = `m` & 7   // The low order 3 bits
 ///
-/// * `x` = (`m` - 1) >> 3  // The remaining high order bits.
+/// * `x` = `m` // The remaining high order bits.
 ///
 /// This is summarized in the table below:
 ///
-/// <Table Border="1">
-/// <TR> <TH>PCINTm</TH>  <TH>`x`</TH> <TH>`b`</TH> </TR>
-/// <TR> <TD>PCINT1</TD>  <TD>0</TD>   <TD>0</TD>   </TR>
-/// <TR> <TD>PCINT2</TD>  <TD>1</TD>   <TD>0</TD>   </TR>
-/// <TR> <TD>PCINT3</TD>  <TD>2</TD>   <TD>0</TD>   </TR>
-/// <TR> <TD>PCINT4</TD>  <TD>3</TD>   <TD>0</TD>   </TR>
-/// <TR> <TD>PCINT5</TD>  <TD>4</TD>   <TD>0</TD>   </TR>
-/// <TR> <TD>PCINT6</TD>  <TD>5</TD>   <TD>0</TD>   </TR>
-/// <TR> <TD>PCINT7</TD>  <TD>6</TD>   <TD>0</TD>   </TR>
-/// <TR> <TD>PCINT8</TD>  <TD>7</TD>   <TD>0</TD>   </TR>
-/// <TR> <TD>PCINT9</TD>  <TD>0</TD>   <TD>1</TD>   </TR>
-/// <TR> <TD>PCINT10</TD> <TD>1</TD>   <TD>1</TD>   </TR>
-/// <TR> <TD>PCINT11</TD> <TD>2</TD>   <TD>1</TD>   </TR>
-/// <TR> <TD>PCINT12</TD> <TD>3</TD>   <TD>1</TD>   </TR>
-/// <TR> <TD>PCINT13</TD> <TD>4</TD>   <TD>1</TD>   </TR>
-/// <TR> <TD>PCINT14</TD> <TD>5</TD>   <TD>1</TD>   </TR>
-/// <TR> <TD>PCINT15</TD> <TD>6</TD>   <TD>1</TD>   </TR>
-/// <TR> <TD>PCINT16</TD> <TD>7</TD>   <TD>1</TD>   </TR>
-/// <TR> <TD>PCINT18</TD> <TD>0</TD>   <TD>2</TD>   </TR>
-/// <TR> <TD>PCINT18</TD> <TD>1</TD>   <TD>2</TD>   </TR>
-/// <TR> <TD>PCINT19</TD> <TD>2</TD>   <TD>2</TD>   </TR>
-/// <TR> <TD>PCINT20</TD> <TD>3</TD>   <TD>2</TD>   </TR>
-/// <TR> <TD>PCINT21</TD> <TD>4</TD>   <TD>2</TD>   </TR>
-/// <TR> <TD>PCINT22</TD> <TD>5</TD>   <TD>2</TD>   </TR>
-/// <TR> <TD>PCINT23</TD> <TD>6</TD>   <TD>2</TD>   </TR>
-/// <TR> <TD>PCINT24</TD> <TD>7</TD>   <TD>2</TD>   </TR>
-/// </Table>
-///
-/// On some microcontrollers, `b` always matches `n` and on others
-/// they do not match.  You just have to be careful.
 ///
 /// ### `Sonar_Controller` Details
 ///
@@ -391,7 +361,7 @@ void Sonar_Queue::shut_down() {
 /// @param trigger_registers specifies the I/O port used to trigger sonar.
 /// @param trigger_bit specifies with pin to use for sonar trigger.
 /// @param sonar_queue specifies which `Sonar_Queue` will get echo pin changes.
-/// @param change_bit specifies which pin change to connected to the echo pin.
+/// @param pcint_index specifies which pin change to connected to the echo pin.
 /// @param echo_bit specifies which pin to use for sonar echos.
 ///
 /// *Sonar()* constructs a sonar object that is one-to-one with a
@@ -399,43 +369,43 @@ void Sonar_Queue::shut_down() {
 /// port that is connected to the trigger pin.  **trigger_bit** specifies
 /// which bit of the trigger I/O port is the pin to trigger with.
 /// **sonar_queue** specifies the `Sonar_Queue` object to use to collect
-/// the echo pin changes with.  **change_bit** specifies which pin of
-/// the appropriate pin change mask register is connected to the echo pin.
-/// **echo_pin** specifies which pin of the echo I/P port is connected
-/// to the echo pin.
-///
-/// The **change_bit** and **echo_bit** can be a bit confusing.  On most
-/// Atmel AVR processors, the pin change mask register has a one-to-one
-/// correspondence with pins in the pin change mask register.  This is
-/// true for the ATmega328 processor.  For other processors, like the
-/// ATmega2560, the correspondence is not one-to-one.  You will have to
-/// look carefully at processor data sheet and the schematic to figure
-/// out which pins to use.
+/// the echo pin changes with.  **pcint_index** specifies which `PCINTn`
+/// is being used for the echo pulse.  **echo_pin** specifies which pin
+/// of the echo I/P port is connected to the echo pin.
 
 Sonar::Sonar(volatile uint8_t *trigger_registers, UByte trigger_bit,
- Sonar_Queue *sonar_queue, UByte change_bit, UByte echo_bit) {
-  pin_change_mask_ = (1 << change_bit);
+ Sonar_Queue *sonar_queue, UByte pcint_index, UByte echo_bit) {
+  UByte pin_change_bit = pcint_index & 7;
+  pin_change_mask_ = (1 << pin_change_bit);
   debug_uart_ = sonar_queue->debug_uart_get();
-  echo_start_ticks_ = 0;
+  echo_delta_ticks_ = 0;
   echo_end_ticks_ = 0;
   echo_mask_ = (1 << echo_bit);
+  echo_start_ticks_ = 0;
   sonar_queue_ = sonar_queue;
   trigger_registers_ = trigger_registers;
   trigger_mask_ = (1 << trigger_bit);
 }
 
 /// @brief Initialize the sonar.
+/// @param sonar_index is the index for this sonar
 ///
 /// This method initializes the trigger and echo pins for the sonar.
-
-void Sonar::initialize() {
+/// **sonar_index** is the index for this sonar in the sonars list.
+void Sonar::initialize(UByte sonar_index, UShort *shared_changes_mask) {
     // Set the trigger pin to be an output pin:
     trigger_registers_[OUTPUT_] &= ~trigger_mask_;   // Clear first
     trigger_registers_[DIRECTION_] |= trigger_mask_; // 1=>output;0=>input
 
     // Set the echos to be input pins:
-    //echo_base_[DDR_OFFSET_] &= ~echo_mask_;
     sonar_queue_->input_direction_set(echo_mask_);
+
+    // Initialize some private variables:
+    echo_delta_ticks_ = 0;
+    echo_end_ticks_ = 0;
+    echo_start_ticks_ = 0;
+    shared_changes_mask_ = shared_changes_mask;
+    sonar_mask_ = (1 << sonar_index);    
 }
 
 /// @brief Return the distance in millimeters
@@ -445,15 +415,18 @@ void Sonar::initialize() {
 /// in millimeters.
 
 UShort Sonar::mm_distance_get() {
-  // The speed of sound is 340.29 M/Sec at sea level.
-  // A sonar echo is requires a round trip to the object and back.
-  // Thus, this distance is divided by 2.  Our clock ticks at 4uSec/tick.
-  // Thus:
+
+  // Clear the changed bit for this snoar:
+  *shared_changes_mask_ &= sonar_mask_;
+
+  // Compute the distance and return it.  The speed of sound is 
+  // 340.29 M/Sec at sea level.  A sonar echo is requires a round
+  // trip to the object and back.  Thus, this distance is divided by 2.
+  //  Our clock ticks at 4uSec/tick.  Thus:
   //
   //   340.29 M    1    1000 mM      1 Sec.       4 uSec.             mM
   //   ======== * === * ======= * ============= * =======  =  .68048 ====
   //     1 Sec.    2      1 M     1000000 uSec.   1 Tick             Tick
-
   return ((echo_end_ticks_ - echo_start_ticks_) * 68) / 100;
 }
 
@@ -551,6 +524,14 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
 	// Since we have a falling edge, we simply remember when it
 	// occurred and mark that we are done:
 	echo_end_ticks_ = ticks;
+
+	// Compute *echo_delta_ticks* and see if it has changed:
+        UByte echo_delta_ticks = echo_end_ticks_ - echo_start_ticks_;
+	if (echo_delta_ticks_ != echo_delta_ticks) {
+	  echo_delta_ticks_ = echo_delta_ticks;
+	  *shared_changes_mask_ |= sonar_mask_;
+	}
+
 	state_ = STATE_OFF_;
 	//debug_uart_->string_print((Text)"v");
       }
@@ -587,6 +568,7 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
   //debug_uart->string_print((Text)"=>Sonars_Controller()!\r\n");
 
   // Initialize various member variables:
+  changes_mask_ = 0;
   debug_uart_ = debug_uart;
   sonar_queues_ = sonar_queues;
   sonars_ = sonars;
@@ -642,9 +624,9 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
 void Sonars_Controller::initialize() {
   // Initialize each *sonar* and compute *pin_change_interrrupts_mask_*:
   pin_change_interrupts_mask_ = 0;
-  for (UByte index = 0; index < sonars_size_; index++) {
-    Sonar *sonar = sonars_[index];
-    sonar->initialize();
+  for (UByte sonar_index = 0; sonar_index < sonars_size_; sonar_index++) {
+    Sonar *sonar = sonars_[sonar_index];
+    sonar->initialize(sonar_index, &changes_mask_);
     Sonar_Queue *sonar_queue = sonar->sonar_queue_get();
     pin_change_interrupts_mask_ |= (1 << sonar_queue->mask_index_get());
   }

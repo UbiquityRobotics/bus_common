@@ -100,8 +100,8 @@ class Sonar {
  public:
   // Public constructors and member functions:
   Sonar(volatile uint8_t *trigger_registers, UByte trigger_mask,
-   Sonar_Queue *sonar_queue, UByte change_bit, UByte echo_mask);
-  void initialize();
+   Sonar_Queue *sonar_queue, UByte pcint_index, UByte echo_mask);
+  void initialize(UByte sonar_index, UShort *shared_changes_mask);
   UShort mm_distance_get();
   void time_out();
   void trigger();
@@ -121,6 +121,13 @@ class Sonar {
   ///
   /// This method will return the echo mask for the sonar.
   UByte echo_mask_get() { return echo_mask_; };
+
+  /// @brief Set the sonar mask.
+  /// @param sonar_mask is the mask for sonar.
+  ///
+  /// This method will set the sonar mask for this sonar to **sonar_mask**.
+  /// This is used for the shared changes mask computation.
+  void sonar_mask_set(UShort sonar_mask) { sonar_mask_ = sonar_mask; };
 
   /// @brief Return the sonar queue associated with the sonar.
   /// @returns the sonar queue associated with the sonar.
@@ -149,12 +156,15 @@ class Sonar {
   // Private member variables:
   UART *debug_uart_;			// Debugging UART
   UByte state_;				// Sonar state
-  UShort echo_start_ticks_;		// Time when echo pulse rose
   UShort echo_end_ticks_;		// Time when echo pulse lowered
-  volatile uint8_t *echo_base_;		// Base address of echo registers
+  UShort echo_delta_ticks_;		// Total number of ticks for echo pulse
+  UShort echo_start_ticks_;		// Time when echo pulse rose
+  volatile uint8_t *echo_registers_;	// Base of echo registers
   UByte echo_mask_;			// Mask to use to trigger pin.
   UByte pin_change_mask_;		// Mask for PCINT register
+  UShort *shared_changes_mask_;		// Address of shared change mask
   Sonar_Queue *sonar_queue_;		// Queue for sonar changes
+  UShort sonar_mask_;			// 1 << sonar_index
   volatile uint8_t *trigger_registers_;	// trigger registers base
   UByte trigger_mask_;			// Mask to use to trigger pin.
 };
@@ -220,6 +230,7 @@ class Sonars_Controller {
   static const UByte STATE_ECHO_WAIT_ = 4;
 
   // Member variables:
+  UShort changes_mask_;
   UART *debug_uart_;
   UByte first_schedule_index_;
   UByte last_schedule_index_;
