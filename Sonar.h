@@ -163,17 +163,45 @@ class Sonars_Controller {
  public:
   Sonars_Controller(UART *debug_uart,
    Sonar *sonars[], Sonar_Queue *sonar_queues[], UByte sonars_schedule[]);
-  unsigned long measurement_trigger(UByte sonar_index);
-  UByte pin_change_mask_get(UByte sonar_index);
-  UByte echo_mask_get(UByte sonar_index);
   void initialize();
   UByte mask_index_get(UByte sonar_index);
   UShort mm_distance_get(UByte sonar_index);
-  void sonar_queues_reset();
   void poll();
-  UByte sonars_schedule_size_get() {return sonars_schedule_size_; };
 
+  // In-line methods:
+
+  /// @brief Return the pin change mask associated with a sonar.
+  /// @param sonar_index specifies which sonar to use.
+  ///
+  /// This method returns the pin change mask associated with the
+  /// **sonar_index**'th sonar.
+
+  UByte pin_change_mask_get(UByte sonar_index)
+   { return sonars_[sonar_index]->pin_change_mask_get(); };
+
+  /// @brief Return the echo mask associated with a sonar.
+  /// @param sonar_index specifies which sonar to use.
+  ///
+  /// This method returns the echo mask associated with the 
+  /// **sonar_index**'th sonar.
+
+  UByte echo_mask_get(UByte sonar_index)
+   { return sonars_[sonar_index]->echo_mask_get(); };
+
+  /// @brief returns the size of the sonars schedule list.
+  ///
+  /// This method returns the size of the sonars schedule list.
+  UByte sonars_schedule_size_get() { return sonars_schedule_size_; };
+
+  /// @brief This constant is used to mark the end of group.
+  ///
+  /// This constant marks the end of sonar group in the sonars schedule
+  /// list.
   static const UByte GROUP_END = 250;
+
+  /// @brief This constant is used to mark the end of the sonars schedule.
+  ///
+  /// This constant marks the end of the sonars schedule list.
   static const UByte SCHEDULE_END = 255;
 
  private:

@@ -199,11 +199,9 @@
 ///            sonars_controller.poll();
 ///        }
 ///
-/// That is all.
+/// ## Miscellaneous Issues
 ///
-/// {Talk about Sonar modules.}
-///
-/// ## `Sonar_Queue` Details.
+/// ### `Sonar_Queue` Details
 ///
 /// The `Sonar_Queue` object implements a fixed size buffer that is
 /// used as a FIFO queue.  Each time a pin change interrupt occurs
@@ -214,11 +212,97 @@
 /// is configured by the `Sonar_Controller` to increment every 4&mu;Sec.
 /// (This assumes a 16MHz system clock.)
 ///
-/// Each I/O port is controlled by three registers called PIN, DDR,
-/// and PORT, where PIN is the port input register, DDR is the data
-/// direction register, and PORT is the port output register.  These
-/// three registers always occur as three consecutive registers.  We
-/// always specify an I/O port
+/// ### `Sonar` Details
+///
+/// The key issue with `Sonar` object is that echo pin numbers and
+/// pin change pin numbers can be confusing.  When you look at the
+/// schematic you will see an echo line going to a pin labeled
+/// `Pln/PCINTm`, where:
+///
+/// * `l` is the port letter (e.g. `A`, `B`, `C`, ...),
+///
+/// * `n` is the bit number of the port (e.g. `0`, `1`, ..., `7`),
+///
+/// * `m` is the pin change interrupt number.  This number is from
+///   `1` through `24`.  
+///
+/// `x` and `n` are easy to understand.  The `m` number needs to be
+/// converted into a mask index register and bit number.  The process
+/// is to 1 from `m` and mask off the appropriate bits.  Thus,
+///
+/// * `b` = (`m` - 1) & 7   // The low order 3 bits
+///
+/// * `x` = (`m` - 1) >> 3  // The remaining high order bits.
+///
+/// This is summarized in the table below:
+///
+/// <Table Border="1">
+/// <TR> <TH>PCINTm</TH>  <TH>`x`</TH> <TH>`b`</TH> </TR>
+/// <TR> <TD>PCINT1</TD>  <TD>0</TD>   <TD>0</TD>   </TR>
+/// <TR> <TD>PCINT2</TD>  <TD>1</TD>   <TD>0</TD>   </TR>
+/// <TR> <TD>PCINT3</TD>  <TD>2</TD>   <TD>0</TD>   </TR>
+/// <TR> <TD>PCINT4</TD>  <TD>3</TD>   <TD>0</TD>   </TR>
+/// <TR> <TD>PCINT5</TD>  <TD>4</TD>   <TD>0</TD>   </TR>
+/// <TR> <TD>PCINT6</TD>  <TD>5</TD>   <TD>0</TD>   </TR>
+/// <TR> <TD>PCINT7</TD>  <TD>6</TD>   <TD>0</TD>   </TR>
+/// <TR> <TD>PCINT8</TD>  <TD>7</TD>   <TD>0</TD>   </TR>
+/// <TR> <TD>PCINT9</TD>  <TD>0</TD>   <TD>1</TD>   </TR>
+/// <TR> <TD>PCINT10</TD> <TD>1</TD>   <TD>1</TD>   </TR>
+/// <TR> <TD>PCINT11</TD> <TD>2</TD>   <TD>1</TD>   </TR>
+/// <TR> <TD>PCINT12</TD> <TD>3</TD>   <TD>1</TD>   </TR>
+/// <TR> <TD>PCINT13</TD> <TD>4</TD>   <TD>1</TD>   </TR>
+/// <TR> <TD>PCINT14</TD> <TD>5</TD>   <TD>1</TD>   </TR>
+/// <TR> <TD>PCINT15</TD> <TD>6</TD>   <TD>1</TD>   </TR>
+/// <TR> <TD>PCINT16</TD> <TD>7</TD>   <TD>1</TD>   </TR>
+/// <TR> <TD>PCINT18</TD> <TD>0</TD>   <TD>2</TD>   </TR>
+/// <TR> <TD>PCINT18</TD> <TD>1</TD>   <TD>2</TD>   </TR>
+/// <TR> <TD>PCINT19</TD> <TD>2</TD>   <TD>2</TD>   </TR>
+/// <TR> <TD>PCINT20</TD> <TD>3</TD>   <TD>2</TD>   </TR>
+/// <TR> <TD>PCINT21</TD> <TD>4</TD>   <TD>2</TD>   </TR>
+/// <TR> <TD>PCINT22</TD> <TD>5</TD>   <TD>2</TD>   </TR>
+/// <TR> <TD>PCINT23</TD> <TD>6</TD>   <TD>2</TD>   </TR>
+/// <TR> <TD>PCINT24</TD> <TD>7</TD>   <TD>2</TD>   </TR>
+/// </Table>
+///
+/// On some microcontrollers, `b` always matches `n` and on others
+/// they do not match.  You just have to be careful.
+///
+/// ### `Sonar_Controller` Details
+///
+/// {More here}
+///
+/// ### Timer1
+///
+/// Timer1 in configured as a 16-bit counter that increments once
+/// every 4&mu;Sec.  While the AVR is really a 8-bit processor,
+/// the AVR designers added a mirror register to the Timer1.
+/// When the `TCNT1L` register is read, the AVR processor stores
+/// the high order 8 bits of the counter into the mirror register.
+/// When the `TCNT1H` is accessed the mirror register is returned.
+/// What this means is that you can get a consistent 16-bit counter
+/// value without having to do a bunch of schenanigans.
+///
+/// The GCC compiler when it sees an access to TCNT1, it will access
+/// both registers in the correct order.  So, utlimately, the right
+/// thing happens, but it is worth understanding what is really going on.
+///
+/// Each I/O port is controlled by three registers called `PIN`, `DDR`,
+/// and `PORT`, where
+///
+/// * `PIN` is the port input register,
+///
+/// * `DDR` is the data direction register, and
+/// 
+/// * `PORT` is the port output register.
+///
+/// These three registers always occur as three consecutive registers.
+/// We always specify an I/O port as an array using the constants:
+///
+/// * `INPUT_` is the offset that gets to the `PIN` register,
+///
+/// * `DIRECTION_` is the offset that gets to the `DDR` register, and
+///
+/// * `OUTPUT_` is the offset that gets to the `PORT` register.
 
 #include <Arduino.h>
 #include <Sonar.h>
@@ -279,18 +363,10 @@ void Sonar_Queue::input_direction_set(UByte echo_mask) {
 
 void Sonar_Queue::interrupt_service_routine() {
   // Grab the latest input port value:
-  UByte echo = echo_registers_[INPUT_];
+  echos_[producer_index_] = echo_registers_[INPUT_];
 
-  // The act of reading *TCNT1L* causes *TCNT1H* to be cached into
-  // a temporary register.  Thus, by reading *TCNT1L* before *TCNT1H*,
-  // we git a consistent 16-bit value without having to do silliness
-  // disabling interrupts and so forth...
-  UByte low_tick = TCNT1L;
-  UByte high_tick = TCNT1H;
-
-  // Stash the values away:
-  echos_[producer_index_] = echo;
-  ticks_[producer_index_] = (((UShort)high_tick) << 8) | ((UShort)low_tick);
+  // Grab the counter value;
+  ticks_[producer_index_] = TCNT1;
 
   // Increment the *producer_index_*:
   producer_index_ = (producer_index_ + 1) & QUEUE_MASK_;
@@ -485,6 +561,26 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
 
 // *Sonars_Controller* constructor:
 
+/// @brief Construct `Sonar_Controllers` object.
+/// @param debug_uart is used for debugging print out.
+/// @param sonars is a null-terminated list of sonar objects.
+/// @param sonar_queues is a null-terminated list of `Sonar_Queue` objects.
+/// @param sonars_schedule is a byte sequence specifying sonar trigger order.
+///
+/// This constructor constructs a `Sonar_Controllers` object. **debug_uart**
+/// is used for debugging only.  **sonars** is a null terminated list of
+/// `Sonar` object addresses.  **sonar_queues** is a null terminated list
+/// of `Sonar_Queue` object addresses.  **sonars_schedule** a `UByte`
+/// list that specifies groups of sonars.  Each sonar is represented by
+/// its index in **sonars**.  Thus, 0 represents the first sonar and
+/// 5 represents the sixth sonar.  Each group of sonars is terminated,
+/// by `Sonars_Controller::GROUP_END`.  A group sonars will be triggered
+/// all at once.  (It is up the use to make sure that simultaneously
+/// triggered sonar pulses do not interfere with one another.)  The
+/// **sonars_schedule** list is terminated by `Sonars_Controller::SCHEDULE_END`.
+/// Be sure to call the **initialize**() method prior to calling the
+/// **poll**() method after constructing this object.
+
 Sonars_Controller::Sonars_Controller(UART *debug_uart,
  Sonar *sonars[], Sonar_Queue *sonar_queues[], UByte sonars_schedule[]) {
   //debug_uart->begin(16000000L, 115200L, (Character *)"8N1");
@@ -538,29 +634,11 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
   //debug_uart->string_print((Text)"<=Sonars_Controller()!\r\n");
 }
 
-// *Sonars_Controller* static variables and method(s):
-
-UByte Sonars_Controller::pin_change_mask_get(UByte sonar_index) {
-  Sonar *sonar = sonars_[sonar_index];
-  UByte change_mask = sonar->pin_change_mask_get();
-  return change_mask;
-}
-
-UByte Sonars_Controller::echo_mask_get(UByte sonar_index) {
-  Sonar *sonar = sonars_[sonar_index];
-  UByte echo_mask = sonar->echo_mask_get();
-  return echo_mask;
-}
-
-UByte Sonars_Controller::mask_index_get(UByte sonar_index) {
-  Sonar *sonar = sonars_[sonar_index];
-  Sonar_Queue *sonar_queue = sonar->sonar_queue_get();
-  UByte mask_index = sonar_queue->mask_index_get();
-  return mask_index;
-}
-
-/// @brief Initialize the controller.
-
+/// @brief Initialize the `Sonars_Controller` object.
+///
+/// This method will compute the pin change interrupts mask and 
+/// configure Timer/Counter 1 to be a 16-bit counter that ticks
+/// over every 4uSec.
 void Sonars_Controller::initialize() {
   // Initialize each *sonar* and compute *pin_change_interrrupts_mask_*:
   pin_change_interrupts_mask_ = 0;
@@ -634,8 +712,39 @@ void Sonars_Controller::initialize() {
 
   // On the ATmega640, ATmega1280, and the ATmega2560, we assume
   // that the power reducition registers PRR0 and PRR1 are initialized
-  // to 0 and hence, that Timer 1 is enabled.
+  // to 0 and hence that Timer 1 is powered up.
 }
+
+/// @brief Return the interrupt mask associated with **sonar_index**.
+/// @param sonar_index specifies which sonar to use.
+/// @returns the associated pin interrupt mask.
+///
+/// This method will return the pin interrupt mask associated with
+/// `Sonar_Queue` associated with **sonar_index**.a
+
+UByte Sonars_Controller::mask_index_get(UByte sonar_index) {
+  Sonar *sonar = sonars_[sonar_index];
+  Sonar_Queue *sonar_queue = sonar->sonar_queue_get();
+  UByte mask_index = sonar_queue->mask_index_get();
+  return mask_index;
+}
+
+/// @brief Return the last distance measured in millimeters.
+/// @param sonar_index specifies the sonar to select.
+/// @returns the distance in millimeters.
+///
+/// This method will select the **sonar_index**'th sonar and return
+/// the last measured distance in millimeters.
+
+UShort Sonars_Controller::mm_distance_get(UByte sonar_index) {
+  return sonars_[sonar_index]->mm_distance_get();
+}
+
+/// @brief Poll the sonars controller to do any pending tasks.
+///
+/// This method is called repeatably to keep the sonars controller
+/// sending out sonar pulses and listening for responses.  Be sure
+/// to call the **initialize** method once before calling this method.
 
 void Sonars_Controller::poll() {
   switch (state_) {
@@ -813,9 +922,5 @@ void Sonars_Controller::poll() {
       break;
     }
   }
-}
-
-UShort Sonars_Controller::mm_distance_get(UByte sonar_index) {
-  return sonars_[sonar_index]->mm_distance_get();
 }
 
