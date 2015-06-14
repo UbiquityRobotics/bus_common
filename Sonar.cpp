@@ -472,6 +472,7 @@ void Sonar::trigger_setup() {
     // previous iteration.  Whatever, we can't trigger the sonar until
     // the echo line goes low.  So, we leave this sonar inactive.
     state_ = STATE_OFF_;
+
     //debug_uart_->string_print((Text)"-");
   } else {
     // Echo pulse is low.  We can activate this sonar:
@@ -484,6 +485,7 @@ void Sonar::trigger_setup() {
 
     // Mark this sonar as active:
     state_ = STATE_ECHO_RISE_WAIT_;
+
     //debug_uart_->string_print((Text)"+");
   }
 }
@@ -497,8 +499,8 @@ void Sonar::trigger_setup() {
 /// **echo_bits** as additional input.  **sonar_queue** is only used
 /// to get access to the debug uart.
 void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
-  //debug_uart_->integer_print(echo);
-  //debug_uart_->string_print((Text)" ");
+  //debug_uart_->integer_print(echo_bits);
+  //debug_uart_->string_print((Text)":");
   //debug_uart_->integer_print(echo_mask_);
 
   // The only states we care about are for rising and falling echo edges:
@@ -509,6 +511,7 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
     }
     case STATE_ECHO_RISE_WAIT_: {
       // We are waiting for the echo pin to go from 0 to 1:
+      //debug_uart_->string_print((Text)"r");
       if ((echo_bits & echo_mask_) != 0) {
 	// Since we have a rising edge, we simply remember when it
 	// occurred and wait for the subsequent falling edge:
@@ -520,7 +523,8 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
     }
     case STATE_ECHO_FALL_WAIT_: {
       // We are waiting for the echo pin to go from 1 to 0:
-      if ((echo_bits & ~echo_mask_) == 0) {
+      //debug_uart_->string_print((Text)"f");
+      if ((echo_bits & echo_mask_) == 0) {
 	// Since we have a falling edge, we simply remember when it
 	// occurred and mark that we are done:
 	echo_end_ticks_ = ticks;
@@ -537,6 +541,11 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
       }
       break;
     }
+    default: {
+      //debug_uart_->string_print((Text)"!");
+      break;
+    }
+
   }
 }
 
@@ -731,10 +740,11 @@ UShort Sonars_Controller::mm_distance_get(UByte sonar_index) {
 void Sonars_Controller::poll() {
   switch (state_) {
     case STATE_SHUT_DOWN_: {
-      if (last_schedule_index_ + 2 >= sonars_schedule_size_) {
-        //debug_uart_->string_print((Text)"\r\n");
-      }
+      //if (last_schedule_index_ + 2 >= sonars_schedule_size_) {
+      //  debug_uart_->string_print((Text)"\r\n");
+      //}
       //debug_uart_->string_print((Text)"\r\nA");
+
       // Shut down each *sonar_queue*:
       for (UByte queue_index = 0;
        queue_index <= sonar_queues_size_; queue_index++) {
@@ -829,7 +839,8 @@ void Sonars_Controller::poll() {
       // * We can can wrap around 2^16 and notice that our *delta_ticks*
       //   has gotten smaller than *previous_delta_ticks*:
       // The if statement below notices both conditions:
-      if (delta_ticks >= TIMEOUT_TICKS_ || delta_ticks < previous_delta_ticks) {
+      if (delta_ticks >= TIMEOUT_TICKS_ ||
+        delta_ticks < previous_delta_ticks) {
 	// We have totally timed out and need to shut everything down
 	// for this group of sonars.  Visit each sonar and time-out each
 	// sonar that does have a value:

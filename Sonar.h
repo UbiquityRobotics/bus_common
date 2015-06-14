@@ -180,6 +180,22 @@ class Sonars_Controller {
 
   // In-line methods:
 
+  /// @brief Return sonar changes mask.
+  /// @returns sonar changes mask.
+  ///
+  /// This method returns a bit mask where each bit that is set to 1
+  /// indicates a sonar distance that has changes since the last time
+  /// it was read.
+  UShort changes_mask_get() { return changes_mask_; };
+
+  /// @brief Return the echo mask associated with a sonar.
+  /// @param sonar_index specifies which sonar to use.
+  ///
+  /// This method returns the echo mask associated with the 
+  /// **sonar_index**'th sonar.
+  UByte echo_mask_get(UByte sonar_index)
+   { return sonars_[sonar_index]->echo_mask_get(); };
+
   /// @brief Return the pin change mask associated with a sonar.
   /// @param sonar_index specifies which sonar to use.
   ///
@@ -188,15 +204,6 @@ class Sonars_Controller {
 
   UByte pin_change_mask_get(UByte sonar_index)
    { return sonars_[sonar_index]->pin_change_mask_get(); };
-
-  /// @brief Return the echo mask associated with a sonar.
-  /// @param sonar_index specifies which sonar to use.
-  ///
-  /// This method returns the echo mask associated with the 
-  /// **sonar_index**'th sonar.
-
-  UByte echo_mask_get(UByte sonar_index)
-   { return sonars_[sonar_index]->echo_mask_get(); };
 
   /// @brief returns the size of the sonars schedule list.
   ///
