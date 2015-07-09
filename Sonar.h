@@ -153,6 +153,14 @@ class Sonar {
   static const UByte STATE_ECHO_FALL_WAIT_ = 2;
   static const UByte TRIGGER_TICKS_ = 4;  // Number of ticks for trigger pulse
 
+  static const UShort SONAR_MEAS_TIMEOUT_START_TICKS_ = 0;
+  static const UShort SONAR_MEAS_TIMEOUT_END_TICKS_   = 0xffff;
+
+  // We don't have a mechanism to indicate bad measurements so define special values
+  // and the higher level app can deal with these values in app specific ways
+  static const UShort SONAR_MEAS_MAX_RANGE_MM_        = 10000;
+  static const UShort SONAR_MEAS_TIMEOUT_MM_          = 10001;
+
   // Private member variables:
   UART *debug_uart_;			// Debugging UART
   UByte state_;				// Sonar state

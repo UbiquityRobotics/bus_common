@@ -416,8 +416,16 @@ void Sonar::initialize(UByte sonar_index, UShort *shared_changes_mask) {
 
 UShort Sonar::mm_distance_get() {
 
+  UInteger mm_int;
+
   // Clear the changed bit for this snoar:
   *shared_changes_mask_ &= sonar_mask_;
+
+  // Trap for special timeout value for the measurement
+  if ((echo_start_ticks_ == SONAR_MEAS_TIMEOUT_START_TICKS_) &&
+      (echo_end_ticks_   == SONAR_MEAS_TIMEOUT_END_TICKS_)) {
+    return SONAR_MEAS_TIMEOUT_MM_;
+  } 
 
   // Compute the distance and return it.  The speed of sound is 
   // 340.29 M/Sec at sea level.  A sonar echo is requires a round
@@ -427,7 +435,14 @@ UShort Sonar::mm_distance_get() {
   //   340.29 M    1    1000 mM      1 Sec.       4 uSec.             mM
   //   ======== * === * ======= * ============= * =======  =  .68048 ====
   //     1 Sec.    2      1 M     1000000 uSec.   1 Tick             Tick
-  return ((echo_end_ticks_ - echo_start_ticks_) * 68) / 100;
+  mm_int = ((UInteger)(echo_end_ticks_ - echo_start_ticks_) * 68) / 100;
+
+  // Implement a max range in case we get questionable values
+  if (mm_int > SONAR_MEAS_MAX_RANGE_MM_) {
+    mm_int = SONAR_MEAS_MAX_RANGE_MM_;
+  }
+
+  return (UShort)mm_int;
 }
 
 /// @brief Marks that the current sonar measurement has timed out.
@@ -435,8 +450,8 @@ UShort Sonar::mm_distance_get() {
 /// This method will mark the current sonar measurement as timed out.
 void Sonar::time_out() {
   if (state_ != STATE_OFF_) {
-    echo_start_ticks_ = 0;
-    echo_end_ticks_ = 0xffff;
+    echo_start_ticks_ = SONAR_MEAS_TIMEOUT_START_TICKS_;
+    echo_end_ticks_   = SONAR_MEAS_TIMEOUT_END_TICKS_;
     state_ = STATE_OFF_;
   }
 }
@@ -529,8 +544,16 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
 	// occurred and mark that we are done:
 	echo_end_ticks_ = ticks;
 
-	// Compute *echo_delta_ticks* and see if it has changed:
-        UByte echo_delta_ticks = echo_end_ticks_ - echo_start_ticks_;
+	// Compute *echo_delta_ticks* and if it seems valid, see if it has changed:
+        UShort echo_delta_ticks = echo_delta_ticks_;;
+        if (echo_end_ticks_ > echo_start_ticks_) {
+          echo_delta_ticks = echo_end_ticks_ - echo_start_ticks_;
+
+        } else {
+          // Tic counter rollover case. We have option of setting special value or some cap
+          // echo_delta_ticks = SONAR_MAX_TIC_CAP;
+        }
+
 	if (echo_delta_ticks_ != echo_delta_ticks) {
 	  echo_delta_ticks_ = echo_delta_ticks;
 	  *shared_changes_mask_ |= sonar_mask_;
