@@ -3,14 +3,14 @@
 #include <Bus_Slave.h>
 #include <Bus_Motor_Encoder.h>
 
-//  Loki: Ku 120, Pu 0.27  Kp=0.60Ku  Kd=KpPu/8 Ki=3Kp/Pu
+//  Loki: Ku 33, Pu 0.7  Kp=0.60Ku  Kd=KpPu/8 Ki=2Kp/Pu
 Bus_Motor_Encoder::Bus_Motor_Encoder() {
   _encoder = 0;
-  _proportional = 70;
+  _proportional = 20;
   _derivative = 3;
-  _integral = 500;
-  _integral_cap = 500;
-  _denominator = 100;
+  _integral = 86;
+  _denominator = 300;
+  _integral_cap = 100;
   reset();
 }
 
