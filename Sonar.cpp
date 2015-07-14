@@ -421,6 +421,10 @@ UShort Sonar::mm_distance_get() {
   // Clear the changed bit for this snoar:
   *shared_changes_mask_ &= sonar_mask_;
 
+  //debug_uart_->string_print((Text)"{");
+  //debug_uart_->integer_print(echo_delta_ticks_);
+  //debug_uart_->string_print((Text)"}");
+
   // Trap for special timeout value for the measurement
   if ((echo_start_ticks_ == SONAR_MEAS_TIMEOUT_START_TICKS_) &&
       (echo_end_ticks_   == SONAR_MEAS_TIMEOUT_END_TICKS_)) {
@@ -435,12 +439,8 @@ UShort Sonar::mm_distance_get() {
   //   340.29 M    1    1000 mM      1 Sec.       4 uSec.             mM
   //   ======== * === * ======= * ============= * =======  =  .68048 ====
   //     1 Sec.    2      1 M     1000000 uSec.   1 Tick             Tick
-  mm_int = ((UInteger)(echo_end_ticks_ - echo_start_ticks_) * 68) / 100;
-
-  // Implement a max range in case we get questionable values
-  if (mm_int > SONAR_MEAS_MAX_RANGE_MM_) {
-    mm_int = SONAR_MEAS_MAX_RANGE_MM_;
-  }
+  //mm_int = ((UInteger)(echo_end_ticks_ - echo_start_ticks_) * 68) / 100;
+  mm_int = (((UInteger)echo_delta_ticks_) * 68) / 100;
 
   return (UShort)mm_int;
 }
@@ -544,15 +544,17 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
 	// occurred and mark that we are done:
 	echo_end_ticks_ = ticks;
 
-	// Compute *echo_delta_ticks* and if it seems valid, see if it has changed:
-        UShort echo_delta_ticks = echo_delta_ticks_;;
-        if (echo_end_ticks_ > echo_start_ticks_) {
-          echo_delta_ticks = echo_end_ticks_ - echo_start_ticks_;
+        UShort echo_delta_ticks = echo_end_ticks_ - echo_start_ticks_;
 
-        } else {
+	// Compute *echo_delta_ticks* and if it seems valid, see if it has changed:
+        //UShort echo_delta_ticks = echo_delta_ticks_;;
+        //if (echo_end_ticks_ > echo_start_ticks_) {
+        //  echo_delta_ticks = echo_end_ticks_ - echo_start_ticks_;
+
+        //} else {
           // Tic counter rollover case. We have option of setting special value or some cap
           // echo_delta_ticks = SONAR_MAX_TIC_CAP;
-        }
+        //}
 
 	if (echo_delta_ticks_ != echo_delta_ticks) {
 	  echo_delta_ticks_ = echo_delta_ticks;
@@ -560,7 +562,10 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
 	}
 
 	state_ = STATE_OFF_;
+        //delay(20);
 	//debug_uart_->string_print((Text)"v");
+	//debug_uart_->integer_print(echo_delta_ticks_);
+	//debug_uart_->string_print("\r\n");
       }
       break;
     }
@@ -873,7 +878,7 @@ void Sonars_Controller::poll() {
 	}
 	// Since we are done, we shut down shut everything down and
 	// go to the next sonar group in the sonar schedule:
-        //debug_uart_->string_print((Text)"<F>");
+        //debug_uart_->string_print((Text)"F>");
 
 	state_ = STATE_SHUT_DOWN_;
 	return;
@@ -886,7 +891,6 @@ void Sonars_Controller::poll() {
 	Sonar_Queue *sonar_queue = sonar_queues_[queue_index];
 	if (!sonar_queue->is_empty()) {
 	  // Process the queue:
-          //debug_uart_->string_print((Text)"<");
 	  UShort tick = sonar_queue->ticks_peek();
 	  UByte echo = sonar_queue->echos_peek();
 	  sonar_queue->consume_one();
@@ -921,12 +925,13 @@ void Sonars_Controller::poll() {
       if (done_count >= last_schedule_index_ - first_schedule_index_ + 1) {
         // We are done:
         state_ = STATE_SHUT_DOWN_;
-        //debug_uart_->string_print((Text)"<H>");
+        //debug_uart_->string_print((Text)"H>");
         return;
       }
 
       // Otherwise, we are still waiting for a sonar to finish up
       // and remain in the same state:
+      //debug_uart_->string_print((Text)"H>");
       return;       
       break;
     }
