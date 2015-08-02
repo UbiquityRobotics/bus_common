@@ -213,10 +213,15 @@ class Sonars_Controller {
   UByte pin_change_mask_get(UByte sonar_index)
    { return sonars_[sonar_index]->pin_change_mask_get(); };
 
-  /// @brief returns the size of the sonars schedule list.
+  /// @brief returns the size of the sonars schedule list in bytes.
   ///
   /// This method returns the size of the sonars schedule list.
   UByte sonars_schedule_size_get() { return sonars_schedule_size_; };
+
+  /// @brief returns the number of the sonars schedule groups.
+  ///
+  /// This method returns the number of groups in the sonars schedule list.
+  UByte sonars_schedule_num_groups_get() { return sonars_schedule_num_groups_; };
 
   /// @brief This constant is used to mark the end of group.
   ///
@@ -237,8 +242,11 @@ class Sonars_Controller {
 
   static const UShort TIMEOUT_TICKS_ = 60000;
 
+  // Space the time between sonar groups.  4000 is time for about 2 meter ping
+  static const UShort GROUP_SPACING_TICKS_ = 4000;  
+
   // State values for _
-  static const UByte STATE_SHUT_DOWN_ = 0;
+  static const UByte STATE_GROUP_DONE_ = 0;
   static const UByte STATE_GROUP_NEXT_ = 1;
   static const UByte STATE_TRIGGER_SETUP_ = 2;
   static const UByte STATE_TRIGGER_ = 3;
@@ -249,16 +257,18 @@ class Sonars_Controller {
   UART *debug_uart_;
   UByte first_schedule_index_;
   UByte last_schedule_index_;
-  UShort now_ticks_;
-  UByte pin_change_interrupts_mask_;
-  UShort previous_now_ticks_;
-  UByte state_;
   UShort start_ticks_;
+  UShort now_ticks_;
+  UShort previous_now_ticks_;
+  UShort trigger_ticks_;
+  UByte pin_change_interrupts_mask_;
+  UByte state_;
   Sonar_Queue **sonar_queues_;
   UByte sonar_queues_size_;
   Sonar **sonars_;
   UByte *sonars_schedule_;
   UByte sonars_schedule_size_;
+  UByte sonars_schedule_num_groups_;
   UByte sonars_size_;
 
 };

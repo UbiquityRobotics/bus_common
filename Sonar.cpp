@@ -610,7 +610,7 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
   sonar_queues_ = sonar_queues;
   sonars_ = sonars;
   sonars_schedule_ = sonars_schedule;
-  state_ = STATE_SHUT_DOWN_;
+  state_ = STATE_GROUP_DONE_;
   //debug_uart->string_print((Text)"1 \r\n");
 
   // Figure out the value for *sonars_size_*:
@@ -632,9 +632,16 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
   }
   //debug_uart->string_print((Text)"4 \r\n");
 
-  // Figure out the value for *sonars_schedule_size_*:
+  // Figure out the value for *sonars_schedule_size_* and *sonars_schedule_num_groups_* 
+  // We count the number of GROUP_END values which is number of rows or the schedule size
+  // and we also count total byte count for the schedule
   sonars_schedule_size_ = 0;
+  sonars_schedule_num_groups_ = 0;
   for (UByte schedule_index = 0; schedule_index <= 255; schedule_index++) {
+    if (sonars_schedule[schedule_index] == GROUP_END) {
+      sonars_schedule_num_groups_ += 1;
+    }
+
     if (sonars_schedule[schedule_index] == SCHEDULE_END) {
       sonars_schedule_size_ = schedule_index;
       break;
@@ -642,8 +649,8 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
   }
   //debug_uart->string_print((Text)"5 \r\n");
 
-  // Start in the shut down state:
-  state_ = STATE_SHUT_DOWN_;
+  // Start in the state that causes us to move to next group
+  state_ = STATE_GROUP_DONE_;
 
   // Setting *last_schedule_index_* to a large value will force the next
   // schedule group to start at the beginning of *sonar_schedules_*:
@@ -767,7 +774,9 @@ UShort Sonars_Controller::mm_distance_get(UByte sonar_index) {
 
 void Sonars_Controller::poll() {
   switch (state_) {
-    case STATE_SHUT_DOWN_: {
+    case STATE_GROUP_DONE_: {
+      UShort done_ticks;
+
       //if (last_schedule_index_ + 2 >= sonars_schedule_size_) {
       //  debug_uart_->string_print((Text)"\r\n");
       //}
@@ -782,15 +791,32 @@ void Sonars_Controller::poll() {
       // Disable pin change interrupts:
       PCICR &= ~pin_change_interrupts_mask_;
 
+      // Wait a minimal gap between groups to avoid hearing last groups echos
+      // that can be still out there and accidentally heard to give false closeby
+      // We will ignore rollover case so this could be improved.
+      if (trigger_ticks_ != 0) {
+        done_ticks = TCNT1;
+        if (done_ticks <= trigger_ticks_) {
+          trigger_ticks_ = done_ticks;		// rollover timer so start delay again
+          return;     // Still waiting for spacing between groups
+        } else if ((done_ticks - trigger_ticks_) < GROUP_SPACING_TICKS_) {
+          return;     // Still waiting for spacing between groups
+        }
+      }
+
       // Next, select another group of sonars to trigger:
       state_ = STATE_GROUP_NEXT_;
       break;
     }
     case STATE_GROUP_NEXT_: {
       //debug_uart_->string_print((Text)"B");
-      // Figure out what the next sonar group in the *sonars_schedule* is:
 
-      // Start with the assumption the we skip over a GROUP_END_:
+      // Figure out what the next sonar group in the *sonars_schedule* is:
+      // first_schedule_index : Index of first sonar in this row
+      // last_schedule_index  : Index of last sonar in this row.
+      // first can be same index as last if only one sonar in this row
+
+      // bypass the GROUP_END marker 
       first_schedule_index_ = last_schedule_index_ + 2;
 
       // If *first_schedule_index_* is too big, reset it to 0:
@@ -832,6 +858,10 @@ void Sonars_Controller::poll() {
       // Grab the starting time:
       start_ticks_ = TCNT1;
       now_ticks_ = start_ticks_;
+      trigger_ticks_ = start_ticks_;
+      if (trigger_ticks_ == 0) {
+        trigger_ticks_ = 1;	// we avoid 0 which is startup case 
+      }
 
       // Enable the pin change interrupts:
       PCICR |= pin_change_interrupts_mask_;
@@ -867,9 +897,9 @@ void Sonars_Controller::poll() {
       // * We can can wrap around 2^16 and notice that our *delta_ticks*
       //   has gotten smaller than *previous_delta_ticks*:
       // The if statement below notices both conditions:
-      if (delta_ticks >= TIMEOUT_TICKS_ ||
-        delta_ticks < previous_delta_ticks) {
-	// We have totally timed out and need to shut everything down
+      if ((delta_ticks >= TIMEOUT_TICKS_) ||
+          (delta_ticks < previous_delta_ticks)) {
+	// We have timed out or timer has wrapped so we need to shut everything down
 	// for this group of sonars.  Visit each sonar and time-out each
 	// sonar that does have a value:
         for (UByte schedule_index = first_schedule_index_;
@@ -880,7 +910,7 @@ void Sonars_Controller::poll() {
 	// go to the next sonar group in the sonar schedule:
         //debug_uart_->string_print((Text)"F>");
 
-	state_ = STATE_SHUT_DOWN_;
+	state_ = STATE_GROUP_DONE_;
 	return;
       }
 
@@ -924,7 +954,7 @@ void Sonars_Controller::poll() {
       // the next group:
       if (done_count >= last_schedule_index_ - first_schedule_index_ + 1) {
         // We are done:
-        state_ = STATE_SHUT_DOWN_;
+        state_ = STATE_GROUP_DONE_;
         //debug_uart_->string_print((Text)"H>");
         return;
       }
@@ -939,7 +969,7 @@ void Sonars_Controller::poll() {
       //debug_uart_->string_print((Text)"<Z>");
       // It should be impossible to get here, but just in case, let's force
       // *state_* to be valid for the next time around:
-      state_ = STATE_SHUT_DOWN_;
+      state_ = STATE_GROUP_DONE_;
       break;
     }
   }
