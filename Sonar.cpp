@@ -382,6 +382,9 @@ Sonar::Sonar(volatile uint8_t *trigger_registers, UByte trigger_bit,
   echo_end_ticks_ = 0;
   echo_mask_ = (1 << echo_bit);
   echo_start_ticks_ = 0;
+  queue_available_ = (Logical)1;
+  queue_time_ = 0;
+  queue_value_ = 0;
   sonar_queue_ = sonar_queue;
   trigger_registers_ = trigger_registers;
   trigger_mask_ = (1 << trigger_bit);
@@ -453,6 +456,18 @@ void Sonar::time_out() {
     echo_start_ticks_ = SONAR_MEAS_TIMEOUT_START_TICKS_;
     echo_end_ticks_   = SONAR_MEAS_TIMEOUT_END_TICKS_;
     state_ = STATE_OFF_;
+  }
+}
+
+void Sonar::queue_poll(UART *host_uart, UInteger time_base, UByte id) {
+  if (queue_available_) {
+    queue_available_ = (Logical)0;
+    host_uart->string_print((Text)" ");
+    host_uart->integer_print((Integer)id);
+    host_uart->string_print((Text)":");
+    host_uart->integer_print((Integer)(queue_time_ - time_base));
+    host_uart->string_print((Text)":");
+    host_uart->integer_print((Integer)queue_value_);
   }
 }
 
@@ -545,6 +560,9 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
 	echo_end_ticks_ = ticks;
 
         UShort echo_delta_ticks = echo_end_ticks_ - echo_start_ticks_;
+	queue_time_ = micros();
+	queue_value_ = mm_distance_get();
+	queue_available_ = (Logical)1;
 
 	// Compute *echo_delta_ticks* and if it seems valid, see if it
 	// has changed:
@@ -975,6 +993,14 @@ void Sonars_Controller::poll() {
       state_ = STATE_GROUP_DONE_;
       break;
     }
+  }
+}
+
+void Sonars_Controller::queue_poll(UART *host_uart,
+ UInteger time_base, UByte id_offset) {
+  for (UByte sonars_index = 0; sonars_index < sonars_size_; sonars_index++) {
+    Sonar *sonar = sonars_[sonars_index];
+    sonar->queue_poll(host_uart, time_base, id_offset + sonars_index);
   }
 }
 

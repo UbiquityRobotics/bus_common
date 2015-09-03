@@ -107,6 +107,7 @@ class Sonar {
   void trigger();
   void trigger_setup();
   void update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue);
+  void queue_poll(UART *host_uart, UInteger time_base, UByte id);
 
   // In-line methods:
 
@@ -142,6 +143,7 @@ class Sonar {
   /// waiting for an echo pulse to finish.
   Logical is_done() {return (Logical)((state_ == STATE_OFF_) ? 1 : 0); };
 
+
  private:
   // Register access offsets:
   static const UByte INPUT_ = 0;          // Offset to port input register
@@ -156,8 +158,9 @@ class Sonar {
   static const UShort SONAR_MEAS_TIMEOUT_START_TICKS_ = 0;
   static const UShort SONAR_MEAS_TIMEOUT_END_TICKS_   = 0xffff;
 
-  // We don't have a mechanism to indicate bad measurements so define special values
-  // and the higher level app can deal with these values in app specific ways
+  // We don't have a mechanism to indicate bad measurements so define special
+  // values and the higher level app can deal with these values in app specific
+  // ways:
   static const UShort SONAR_MEAS_MAX_RANGE_MM_        = 10000;
   static const UShort SONAR_MEAS_TIMEOUT_MM_          = 10001;
 
@@ -170,6 +173,9 @@ class Sonar {
   volatile uint8_t *echo_registers_;	// Base of echo registers
   UByte echo_mask_;			// Mask to use to trigger pin.
   UByte pin_change_mask_;		// Mask for PCINT register
+  Logical queue_available_;		// The current value available for queue
+  UInteger queue_time_;			// Time queue value occurred.
+  UInteger queue_value_;		// Value for queue response
   UShort *shared_changes_mask_;		// Address of shared change mask
   Sonar_Queue *sonar_queue_;		// Queue for sonar changes
   UShort sonar_mask_;			// 1 << sonar_index
@@ -185,6 +191,7 @@ class Sonars_Controller {
   UByte mask_index_get(UByte sonar_index);
   UShort mm_distance_get(UByte sonar_index);
   void poll();
+  void queue_poll(UART *host_uart, UInteger time_base, UByte id_offset);
 
   // In-line methods:
 
@@ -221,7 +228,8 @@ class Sonars_Controller {
   /// @brief returns the number of the sonars schedule groups.
   ///
   /// This method returns the number of groups in the sonars schedule list.
-  UByte sonars_schedule_num_groups_get() { return sonars_schedule_num_groups_; };
+  UByte sonars_schedule_num_groups_get()
+    { return sonars_schedule_num_groups_; };
 
   /// @brief This constant is used to mark the end of group.
   ///
