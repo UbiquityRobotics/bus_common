@@ -27,7 +27,6 @@ class Bus_Motor_Encoder {
 
   virtual Integer encoder_get() = 0;
 
-  // This one needs to go away:
   void encoder__set(Integer encoder) {
     _encoder = encoder;
   };

@@ -382,6 +382,9 @@ Sonar::Sonar(volatile uint8_t *trigger_registers, UByte trigger_bit,
   echo_end_ticks_ = 0;
   echo_mask_ = (1 << echo_bit);
   echo_start_ticks_ = 0;
+  queue_available_ = (Logical)1;
+  queue_time_ = 0;
+  queue_value_ = 0;
   sonar_queue_ = sonar_queue;
   trigger_registers_ = trigger_registers;
   trigger_mask_ = (1 << trigger_bit);
@@ -453,6 +456,18 @@ void Sonar::time_out() {
     echo_start_ticks_ = SONAR_MEAS_TIMEOUT_START_TICKS_;
     echo_end_ticks_   = SONAR_MEAS_TIMEOUT_END_TICKS_;
     state_ = STATE_OFF_;
+  }
+}
+
+void Sonar::queue_poll(UART *host_uart, UInteger time_base, UByte id) {
+  if (queue_available_) {
+    queue_available_ = (Logical)0;
+    host_uart->string_print((Text)" ");
+    host_uart->integer_print((Integer)id);
+    host_uart->string_print((Text)":");
+    host_uart->integer_print((Integer)(queue_time_ - time_base));
+    host_uart->string_print((Text)":");
+    host_uart->integer_print((Integer)queue_value_);
   }
 }
 
@@ -545,14 +560,19 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
 	echo_end_ticks_ = ticks;
 
         UShort echo_delta_ticks = echo_end_ticks_ - echo_start_ticks_;
+	queue_time_ = micros();
+	queue_value_ = mm_distance_get();
+	queue_available_ = (Logical)1;
 
-	// Compute *echo_delta_ticks* and if it seems valid, see if it has changed:
+	// Compute *echo_delta_ticks* and if it seems valid, see if it
+	// has changed:
         //UShort echo_delta_ticks = echo_delta_ticks_;;
         //if (echo_end_ticks_ > echo_start_ticks_) {
         //  echo_delta_ticks = echo_end_ticks_ - echo_start_ticks_;
 
         //} else {
-          // Tic counter rollover case. We have option of setting special value or some cap
+          // Tic counter rollover case. We have option of setting special
+	  // value or some cap
           // echo_delta_ticks = SONAR_MAX_TIC_CAP;
         //}
 
@@ -632,8 +652,9 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
   }
   //debug_uart->string_print((Text)"4 \r\n");
 
-  // Figure out the value for *sonars_schedule_size_* and *sonars_schedule_num_groups_* 
-  // We count the number of GROUP_END values which is number of rows or the schedule size
+  // Figure out the value for *sonars_schedule_size_* and
+  // *sonars_schedule_num_groups_*.  We count the number of GROUP_END
+  // values which is number of rows or the schedule size
   // and we also count total byte count for the schedule
   sonars_schedule_size_ = 0;
   sonars_schedule_num_groups_ = 0;
@@ -792,12 +813,12 @@ void Sonars_Controller::poll() {
       PCICR &= ~pin_change_interrupts_mask_;
 
       // Wait a minimal gap between groups to avoid hearing last groups echos
-      // that can be still out there and accidentally heard to give false closeby
-      // We will ignore rollover case so this could be improved.
+      // that can be still out there and accidentally heard to give false
+      // close by.  We will ignore rollover case so this could be improved.
       if (trigger_ticks_ != 0) {
         done_ticks = TCNT1;
         if (done_ticks <= trigger_ticks_) {
-          trigger_ticks_ = done_ticks;		// rollover timer so start delay again
+          trigger_ticks_ = done_ticks;	// rollover timer so start delay again
           return;     // Still waiting for spacing between groups
         } else if ((done_ticks - trigger_ticks_) < GROUP_SPACING_TICKS_) {
           return;     // Still waiting for spacing between groups
@@ -899,8 +920,8 @@ void Sonars_Controller::poll() {
       // The if statement below notices both conditions:
       if ((delta_ticks >= TIMEOUT_TICKS_) ||
           (delta_ticks < previous_delta_ticks)) {
-	// We have timed out or timer has wrapped so we need to shut everything down
-	// for this group of sonars.  Visit each sonar and time-out each
+	// We have timed out or timer has wrapped so we need to shut everything
+	// down for this group of sonars.  Visit each sonar and time-out each
 	// sonar that does have a value:
         for (UByte schedule_index = first_schedule_index_;
          schedule_index <= last_schedule_index_; schedule_index++) {
@@ -972,6 +993,14 @@ void Sonars_Controller::poll() {
       state_ = STATE_GROUP_DONE_;
       break;
     }
+  }
+}
+
+void Sonars_Controller::queue_poll(UART *host_uart,
+ UInteger time_base, UByte id_offset) {
+  for (UByte sonars_index = 0; sonars_index < sonars_size_; sonars_index++) {
+    Sonar *sonar = sonars_[sonars_index];
+    sonar->queue_poll(host_uart, time_base, id_offset + sonars_index);
   }
 }
 
