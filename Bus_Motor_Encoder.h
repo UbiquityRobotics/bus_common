@@ -8,17 +8,17 @@ class Bus_Motor_Encoder {
   Bus_Motor_Encoder();
 
   Short denominator_get() {
-    return _denominator;
+    return _pid_Kdom;
   };
-  void denominator_set(Short denominator) {
-    _denominator = denominator;
+  void denominator_set(Short pid_Kdom) {
+    _pid_Kdom = pid_Kdom;
   };
 
   Short derivative_get() {
-    return _derivative;
+    return _pid_Kd;
   };
-  void derivative_set(Short derivative) {
-    _derivative = derivative;
+  void derivative_set(Short pid_Kd) {
+    _pid_Kd = pid_Kd;
   };
 
   void do_pid();
@@ -33,10 +33,10 @@ class Bus_Motor_Encoder {
   };
   
   Short integral_get() {
-    return _integral;
+    return _pid_Ki;
   };
-  void integral_set(Short integral) {
-    _integral = integral;
+  void integral_set(Short pid_Ki) {
+    _pid_Ki = pid_Ki;
   };
 
   Short integral_cap_get() {
@@ -47,21 +47,21 @@ class Bus_Motor_Encoder {
   };
 
   Logical is_reset() {
-    return (Logical)(_previous_input == 0);
+    return (Logical)(_previous_rate == 0);
   }
 
   Integer output_get() {
-    return _output;
+    return _pwm;
   };
-  void output_set(Integer output) {
-    _output = output;
+  void output_set(Integer pwm) {
+    _pwm = pwm;
   };
 
   Short proportional_get() {
-    return _proportional;
+    return _pid_Kp;
   };
-  void proportional_set(Short proportional) {
-    _proportional = proportional;
+  void proportional_set(Short pid_Kp) {
+    _pid_Kp = pid_Kp;
   };
 
   virtual void pwm_set(Byte pwm) = 0;
@@ -74,31 +74,22 @@ class Bus_Motor_Encoder {
 
  private:
   static const Integer _maximum_pwm = 127;
-  Short _proportional;	// PID Proportional constant
-  Short _derivative;	// PID Differential constant
-  Short _integral;	// PID Integal constant
+  Short _pid_Kp;	// PID Proportional constant
+  Short _pid_Kd;	// PID Differential constant
+  Short _pid_Ki;	// PID Integal constant
+  Short _pid_Kdom;	// PID common denominator 
+  Short _integral_term;	// PID integrated error term
   Short _integral_cap;	// PID Integal term cap
-  Short _denominator;	// PID common denominator 
+
+  Integer _pwm;			        // last motor setting
+  Integer _previous_pwm;		// last pid loop output value
 
   Double _target_ticks_per_frame;	// target speed in ticks per frame
   Integer _encoder;			// encoder count
   Integer _previous_encoder;		// last encoder count
+  Integer _rate;			// encoder count rate for current frame
+  Integer _previous_rate;		// encoder count rate for prior frame
 
-  // Using previous input (_prev_input) instead of PrevError to avoid
-  // derivative kick.  See:
-  //
-  //    http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
-
-  Short _previous_input;		// last input
-
-  // Using integrated term (ITerm) instead of integrated error (Ierror),
-  // to allow tuning changes.  See:
-  //
-  //    http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-tuning-changes/
-
-  Short _integral_term;			// integral term
-
-  Integer _output;			// last motor setting
 };
 
 #endif //BUS_MOTOR_ENCODER_H_INCLUDED
