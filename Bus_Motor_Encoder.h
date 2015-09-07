@@ -27,10 +27,6 @@ class Bus_Motor_Encoder {
 
   virtual Integer encoder_get() = 0;
 
-  void encoder__set(Integer encoder) {
-    _encoder = encoder;
-  };
-  
   Short integral_get() {
     return _pid_Ki;
   };
@@ -56,6 +52,10 @@ class Bus_Motor_Encoder {
     _pwm = pwm;
   };
 
+  void pid_encoder_set(Integer encoder) {
+    _encoder = encoder;
+  };
+  
   Short proportional_get() {
     return _pid_Kp;
   };
