@@ -27,7 +27,7 @@ class Bus_Motor_Encoder {
 
   virtual Integer encoder_get() = 0;
 
-  void encoder__set(Integer encoder) {
+  void pid_encoder_set(Integer encoder) {
     _encoder = encoder;
   };
   
@@ -52,6 +52,30 @@ class Bus_Motor_Encoder {
   Integer output_get() {
     return _pwm;
   };
+
+  // We supply these for debug purposes so we only expose the get
+  Integer previous_pwm_get() {
+    return _previous_pwm;
+  };
+  Integer perr_get() {
+    return _perr;
+  };
+  Integer pid_delta_get() {
+    return _pid_delta;
+  };
+  Integer rate_get() {
+    return _rate;
+  };
+  Integer previous_encoder_get() {
+    return _previous_encoder;
+  };
+  void previous_encoder_set(Integer enc) {
+    _previous_encoder = enc;;
+  };
+  Integer integral_term_get() {
+    return _integral_term;
+  };
+
   void output_set(Integer pwm) {
     _pwm = pwm;
   };
@@ -70,6 +94,9 @@ class Bus_Motor_Encoder {
   void target_ticks_per_frame_set(Integer speed) {
     _target_ticks_per_frame = (Double)speed;
   };
+  Integer target_ticks_per_frame_get() {
+    return (Integer)_target_ticks_per_frame;
+  };
 
  private:
   static const Integer _maximum_pwm = 127;
@@ -81,6 +108,8 @@ class Bus_Motor_Encoder {
   Short _integral_cap;	// PID Integal term cap
 
   Integer _pwm;			        // last motor setting
+  Integer _perr;		        // Perror for this pass
+  Integer _pid_delta;		        // The delta to add to last pid
   Integer _previous_pwm;		// last pid loop output value
 
   Double _target_ticks_per_frame;	// target speed in ticks per frame
