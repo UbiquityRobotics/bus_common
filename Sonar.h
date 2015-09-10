@@ -117,6 +117,23 @@ class Sonar {
   /// This method will return the pin change mask for the sonar.
   UByte pin_change_mask_get() { return pin_change_mask_; };
 
+  /// @brief Configure a sonar.
+  /// @param sonar_class is one of *CLASS_FRONT*, *CLASS_BACK*, *CLASS_SIDE*,
+  ///        or *CLASS_OFF*.
+  /// @param left_id is the sonar index for the sonar to the left.
+  /// @param right_id is the sonar index for the sonar to the right.
+  ///
+  /// This method will configure the *Sonar* object with *sonar_class*,
+  /// *left_id*, and *right_id*.  The *sonar_class* should be specified as
+  /// *Sonar::CLASS_OFF* if the sonar is disabled, *Sonar::CLASS_FRONT* if
+  /// the sonar is on the front of the robot, *Sonar::CLASS_BACK* if the sonar
+  /// is on the back of the robot, and *Sonar::CLASS_SIDE* if the sonar is on
+  /// the side of the robot.  *left_id* specify the sonar to the left and
+  /// right of the *sonar_index*'th id looking out from the robot.  -1 is
+  /// specified to indicate that there really is not sonar very close to the
+  /// left or right.
+  void configure(UByte sonar_class, Byte left_id, Byte right_id);
+
   /// @brief return the echo mask.
   /// @returns the echo mask.
   ///
@@ -143,6 +160,25 @@ class Sonar {
   /// waiting for an echo pulse to finish.
   Logical is_done() {return (Logical)((state_ == STATE_OFF_) ? 1 : 0); };
 
+  /// @brief This constant is used to indicate that a sonar is disabled.
+  ///
+  /// This constant is used to indicate that a sonar is disabled.
+  static const UByte CLASS_OFF = 0;
+
+  /// @brief This constant is used to indicate that a sonar is in back.
+  ///
+  /// This constant is used to indicate that a sonar is in back.
+  static const UByte CLASS_BACK = 1;
+
+  /// @brief This constant is used to indicate that a sonar is in front.
+  ///
+  /// This constant is used to indicate that a sonar is in front.
+  static const UByte CLASS_FRONT = 2;
+
+  /// @brief This constant is used to indicate that a sonar is on the side.
+  ///
+  /// This constant is used to indicate that a sonar is on the side.
+  static const UByte CLASS_SIDE = 3;
 
  private:
   // Register access offsets:
@@ -172,11 +208,14 @@ class Sonar {
   UShort echo_start_ticks_;		// Time when echo pulse rose
   volatile uint8_t *echo_registers_;	// Base of echo registers
   UByte echo_mask_;			// Mask to use to trigger pin.
+  Byte left_id_;			// Index of sonar on left (<0 ==> none)
   UByte pin_change_mask_;		// Mask for PCINT register
   Logical queue_available_;		// The current value available for queue
   UInteger queue_time_;			// Time queue value occurred.
   UInteger queue_value_;		// Value for queue response
+  Byte right_id_;			// Index of sonar on right (<0 ==> none)
   UShort *shared_changes_mask_;		// Address of shared change mask
+  UByte sonar_class_;			// Class: one of OFF/FRONT/BACK/SIDE
   Sonar_Queue *sonar_queue_;		// Queue for sonar changes
   UShort sonar_mask_;			// 1 << sonar_index
   volatile uint8_t *trigger_registers_;	// trigger registers base
@@ -219,6 +258,25 @@ class Sonars_Controller {
 
   UByte pin_change_mask_get(UByte sonar_index)
    { return sonars_[sonar_index]->pin_change_mask_get(); };
+
+  /// @brief Configure a sonar.
+  /// @param sonar_index is the identifier for the sonar to be configured.
+  /// @param sonar_class is one of *CLAS_FRONT*, *CLASS_BACK*, *CLASS_SIDE*,
+  ///        or *CLASS_OFF*.
+  /// @param left_id is the sonar index for the sonar to the left.
+  /// @param right_id is the sonar index for the sonar to the right.
+  ///
+  /// This method will configure the *sonar_index*'th sonar with *sonar_class*,
+  /// *left_id*, and *right_id*.  The *sonar_class* should be specified as
+  /// *Sonar::CLASS_OFF* if the sonar is disabled, *Sonar::CLASS_FRONT* if
+  /// the sonar is on the front of the robot, *Sonar::CLASS_BACK* if the sonar
+  /// is on the back of the robot, and *Sonar::CLASS_SIDE* if the sonar is on
+  /// the side of the robot.  *left_id* specify the sonar to the left and
+  /// right of the *sonar_index*'th id looking out from the robot.  -1 is
+  /// specified to indicate that there really is not sonar very close to the
+  /// left or right.
+  void sonar_configure(UByte sonar_index,
+   UByte sonar_class, Byte left_id, Byte right_id);
 
   /// @brief returns the size of the sonars schedule list in bytes.
   ///

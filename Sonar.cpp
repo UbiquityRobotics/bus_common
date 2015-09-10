@@ -390,6 +390,12 @@ Sonar::Sonar(volatile uint8_t *trigger_registers, UByte trigger_bit,
   trigger_mask_ = (1 << trigger_bit);
 }
 
+void Sonar::configure(UByte sonar_class, Byte left_id, Byte right_id) {
+  sonar_class_ = sonar_class;
+  left_id_ = left_id;
+  right_id_ = right_id;
+}
+
 /// @brief Initialize the sonar.
 /// @param sonar_index is the index for this sonar
 ///
@@ -599,7 +605,7 @@ void Sonar::update(UShort ticks, UByte echo_bits, Sonar_Queue *sonar_queue) {
 
 // *Sonars_Controller* constructor:
 
-/// @brief Construct `Sonar_Controllers` object.
+/// @brief Construct `Sonars_Controller` object.
 /// @param debug_uart is used for debugging print out.
 /// @param sonars is a null-terminated list of sonar objects.
 /// @param sonar_queues is a null-terminated list of `Sonar_Queue` objects.
@@ -1004,3 +1010,10 @@ void Sonars_Controller::queue_poll(UART *host_uart,
   }
 }
 
+void Sonars_Controller::sonar_configure(UByte sonar_index,
+ UByte sonar_class, Byte left_id, Byte right_id) {
+  if (sonar_index < sonars_size_) {
+    Sonar *sonar = sonars_[sonar_index];
+    sonar->configure(sonar_class, left_id, right_id);
+  }
+}

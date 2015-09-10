@@ -3,8 +3,6 @@
 #include <Bus_Slave.h>
 #include <Bus_Motor_Encoder.h>
 
-
-
 //  Loki: 20150907 mjstn  Kp 30 Kd 7 Ki 25 Ko 600 Ci 400
 Bus_Motor_Encoder::Bus_Motor_Encoder() {
   _encoder = 0;
@@ -27,7 +25,6 @@ void Bus_Motor_Encoder::reset() {
    _previous_rate = 0;
    _integral_term = 0;
 }
-
 
 //
 // Pid control loop math
