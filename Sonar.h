@@ -101,8 +101,10 @@ class Sonar {
   // Public constructors and member functions:
   Sonar(volatile uint8_t *trigger_registers, UByte trigger_mask,
    Sonar_Queue *sonar_queue, UByte pcint_index, UByte echo_mask);
+  Logical is_close();
   void initialize(UByte sonar_index, UShort *shared_changes_mask);
   UShort mm_distance_get();
+  UByte priority_compute(Sonar **sonars, Byte direction);
   void time_out();
   void trigger();
   void trigger_setup();
@@ -134,11 +136,16 @@ class Sonar {
   /// left or right.
   void configure(UByte sonar_class, Byte left_id, Byte right_id);
 
-  /// @brief return the echo mask.
+  /// @brief Return the echo mask.
   /// @returns the echo mask.
   ///
   /// This method will return the echo mask for the sonar.
   UByte echo_mask_get() { return echo_mask_; };
+
+  /// @brief Reset the sonar priority to zero.
+  ///
+  /// This method will reset the sonar priority to zero.
+  void priority_reset() { priority_ = 0; };
 
   /// @brief Set the sonar mask.
   /// @param sonar_mask is the mask for sonar.
@@ -200,6 +207,12 @@ class Sonar {
   static const UShort SONAR_MEAS_MAX_RANGE_MM_        = 10000;
   static const UShort SONAR_MEAS_TIMEOUT_MM_          = 10001;
 
+  // These constant are added to the *priority_* field:
+  static const UByte PRIORITY_BACKGROUND_ = 1;	// Sonar is not very important
+  static const UByte PRIORITY_TRAVEL_DIR_ = 2;	// Sonar is direction of travel
+  static const UByte PRIORITY_NEAR_CLOSE_ = 4;	// Next to a close sonar
+  static const UByte PRIORITY_CLOSE_ = 8;	// Previous distance was close
+
   // Private member variables:
   UART *debug_uart_;			// Debugging UART
   UByte state_;				// Sonar state
@@ -210,6 +223,7 @@ class Sonar {
   UByte echo_mask_;			// Mask to use to trigger pin.
   Byte left_id_;			// Index of sonar on left (<0 ==> none)
   UByte pin_change_mask_;		// Mask for PCINT register
+  UByte priority_;			// Current priority sum
   Logical queue_available_;		// The current value available for queue
   UInteger queue_time_;			// Time queue value occurred.
   UInteger queue_value_;		// Value for queue response
@@ -226,6 +240,9 @@ class Sonars_Controller {
  public:
   Sonars_Controller(UART *debug_uart,
    Sonar *sonars[], Sonar_Queue *sonar_queues[], UByte sonars_schedule[]);
+  void group_advance();
+  void group_priorities_reset();
+  UByte group_threshold(Byte direction);
   void initialize();
   UByte mask_index_get(UByte sonar_index);
   UShort mm_distance_get(UByte sonar_index);

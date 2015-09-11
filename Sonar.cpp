@@ -454,6 +454,53 @@ UShort Sonar::mm_distance_get() {
   return (UShort)mm_int;
 }
 
+Logical Sonar::is_close() {
+  Logical result = (Logical)0;
+  UShort mm_distance = mm_distance_get();
+  
+  // 500 ~= 19 inches:
+  if (mm_distance < 500) {
+    result = (Logical)1;
+  }
+  return result;
+}
+
+UByte Sonar::priority_compute(Sonar **sonars, Byte direction) {
+  Logical left_is_close = (Logical)0;
+  if (left_id_ >= 0) {
+    left_is_close = sonars[left_id_]->is_close();
+  }
+  Logical right_is_close = (Logical)0;
+  if (right_id_ >= 0) {
+    right_is_close = sonars[right_id_]->is_close();
+  }
+
+  UByte priority_delta = PRIORITY_BACKGROUND_;
+  if (direction >= 0 && sonar_class_ == CLASS_FRONT) {
+    // Robot is trending foward, turning in place, or stopped:
+    if (is_close()) {
+      priority_delta = PRIORITY_CLOSE_;
+    } else if (left_is_close || right_is_close) {
+      priority_delta = PRIORITY_NEAR_CLOSE_;
+    } else {
+      priority_delta = PRIORITY_TRAVEL_DIR_;
+    }
+  } else if (direction < 0 && sonar_class_ == CLASS_BACK) {
+    // Robot is trending backward:
+    if (is_close()) {
+      priority_delta = PRIORITY_CLOSE_;
+    } else if (left_is_close || right_is_close) {
+      priority_delta = PRIORITY_NEAR_CLOSE_;
+    } else {
+      priority_delta = PRIORITY_TRAVEL_DIR_;
+    }
+  }
+
+  // Incrment *priority*:
+  priority_ += priority_delta;
+  return priority_;
+}
+
 /// @brief Marks that the current sonar measurement has timed out.
 ///
 /// This method will mark the current sonar measurement as timed out.
@@ -687,6 +734,61 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
   //debug_uart->string_print((Text)"<=Sonars_Controller()!\r\n");
 }
 
+void Sonars_Controller::group_advance() {
+  // bypass the GROUP_END marker 
+  first_schedule_index_ = last_schedule_index_ + 2;
+
+  // If *first_schedule_index_* is too big, reset it to 0:
+  if (first_schedule_index_ >= sonars_schedule_size_) {
+    first_schedule_index_ = 0;
+  }
+
+  // Find the *last_schedule_index_* for the group;
+  last_schedule_index_ = first_schedule_index_;
+  for (UByte schedule_index = first_schedule_index_;
+   schedule_index < sonars_schedule_size_; schedule_index++) {
+    if (sonars_schedule_[schedule_index + 1] == GROUP_END) {
+      last_schedule_index_ = schedule_index;
+      break;
+    }
+  }
+}
+
+/// @brief Return the group threshould.
+/// @param direction specifies the robot direction.
+///
+/// This method will return the maximum priority of each sonar
+/// in the current group.  *direction* is positive if the robot
+/// is trending forward, negative if the robot is trending backwards,
+/// zero if the robot is turning place or stopped.
+UByte Sonars_Controller::group_threshold(Byte direction) {
+  /// Visit each *sonar* in the group:
+  UByte threshold = 0;
+  Sonar **sonars = sonars_;
+  for (UByte schedule_index = first_schedule_index_;
+   schedule_index <= last_schedule_index_; schedule_index++) {
+    Sonar *sonar = sonars[sonars_schedule_[schedule_index]];
+
+    /// Compute the *priority* and update the *threshold*:
+    UByte priority = sonar->priority_compute(sonars, direction);
+    if (priority > threshold) {
+      threshold = priority;
+    }
+  }
+  return threshold;
+}
+
+/// @brief Reset the priorities of each sonar in the current group.
+///
+/// This method will reset the priorities of each sonar in the current group.
+void Sonars_Controller::group_priorities_reset() {
+  for (UByte schedule_index = first_schedule_index_;
+   schedule_index <= last_schedule_index_; schedule_index++) {
+    Sonar *sonar = sonars_[sonars_schedule_[schedule_index]];
+    sonar->priority_reset();
+  }
+}
+
 /// @brief Initialize the `Sonars_Controller` object.
 ///
 /// This method will compute the pin change interrupts mask and 
@@ -843,26 +945,17 @@ void Sonars_Controller::poll() {
       // last_schedule_index  : Index of last sonar in this row.
       // first can be same index as last if only one sonar in this row
 
-      // bypass the GROUP_END marker 
-      first_schedule_index_ = last_schedule_index_ + 2;
-
-      // If *first_schedule_index_* is too big, reset it to 0:
-      if (first_schedule_index_ >= sonars_schedule_size_) {
-	first_schedule_index_ = 0;
-      }
-
       // Now hunt for the the correct value for *last_schedule_index_*:
-      last_schedule_index_ = first_schedule_index_;
-      for (UByte schedule_index = first_schedule_index_;
-       schedule_index < sonars_schedule_size_; schedule_index++) {
-	if (sonars_schedule_[schedule_index + 1] == GROUP_END) {
-	  last_schedule_index_ = schedule_index;
+      for (UByte count = 0; count < 8; count++) {
+	group_advance();
+	if (group_threshold(1) >= 8) {
+	  state_ = STATE_TRIGGER_SETUP_;
 	  break;
 	}
       }
 
       // Next, do the prework for the set of sonar triggers:
-      state_ = STATE_TRIGGER_SETUP_;
+      //state_ = STATE_TRIGGER_SETUP_;
 
       //debug_uart_->integer_print(first_schedule_index_);
       break;
