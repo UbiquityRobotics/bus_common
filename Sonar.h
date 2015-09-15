@@ -242,12 +242,14 @@ class Sonars_Controller {
    Sonar *sonars[], Sonar_Queue *sonar_queues[], UByte sonars_schedule[]);
   void group_advance();
   void group_priorities_reset();
-  UByte group_threshold(Byte direction);
+  UByte group_threshold();
   void initialize();
   UByte mask_index_get(UByte sonar_index);
   UShort mm_distance_get(UByte sonar_index);
   void poll();
   void queue_poll(UART *host_uart, UInteger time_base, UByte id_offset);
+  void sonar_configure(UByte sonar_index,
+   UByte sonar_class, Byte left_id, Byte right_id);
 
   // In-line methods:
 
@@ -276,24 +278,14 @@ class Sonars_Controller {
   UByte pin_change_mask_get(UByte sonar_index)
    { return sonars_[sonar_index]->pin_change_mask_get(); };
 
-  /// @brief Configure a sonar.
-  /// @param sonar_index is the identifier for the sonar to be configured.
-  /// @param sonar_class is one of *CLAS_FRONT*, *CLASS_BACK*, *CLASS_SIDE*,
-  ///        or *CLASS_OFF*.
-  /// @param left_id is the sonar index for the sonar to the left.
-  /// @param right_id is the sonar index for the sonar to the right.
+  /// @brief Set current robot direction.
+  /// @param direction is positive for forward and negative for backward.
   ///
-  /// This method will configure the *sonar_index*'th sonar with *sonar_class*,
-  /// *left_id*, and *right_id*.  The *sonar_class* should be specified as
-  /// *Sonar::CLASS_OFF* if the sonar is disabled, *Sonar::CLASS_FRONT* if
-  /// the sonar is on the front of the robot, *Sonar::CLASS_BACK* if the sonar
-  /// is on the back of the robot, and *Sonar::CLASS_SIDE* if the sonar is on
-  /// the side of the robot.  *left_id* specify the sonar to the left and
-  /// right of the *sonar_index*'th id looking out from the robot.  -1 is
-  /// specified to indicate that there really is not sonar very close to the
-  /// left or right.
-  void sonar_configure(UByte sonar_index,
-   UByte sonar_class, Byte left_id, Byte right_id);
+  /// This method will set set the current robot direction.  *direction*
+  /// is positive for when the robot is trending forward, negative for
+  /// when the robot is trending backwards and zero for when the robot
+  /// is turning in place or stopped.
+  void direction_set(Byte direction) { direction_ = direction; };
 
   /// @brief returns the size of the sonars schedule list in bytes.
   ///
@@ -338,6 +330,7 @@ class Sonars_Controller {
   // Member variables:
   UShort changes_mask_;
   UART *debug_uart_;
+  Byte direction_;		// >0 => forward and <0 => backward
   UByte first_schedule_index_;
   UByte last_schedule_index_;
   UShort start_ticks_;

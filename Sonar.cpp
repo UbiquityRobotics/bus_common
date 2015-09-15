@@ -761,7 +761,7 @@ void Sonars_Controller::group_advance() {
 /// in the current group.  *direction* is positive if the robot
 /// is trending forward, negative if the robot is trending backwards,
 /// zero if the robot is turning place or stopped.
-UByte Sonars_Controller::group_threshold(Byte direction) {
+UByte Sonars_Controller::group_threshold() {
   /// Visit each *sonar* in the group:
   UByte threshold = 0;
   Sonar **sonars = sonars_;
@@ -770,7 +770,7 @@ UByte Sonars_Controller::group_threshold(Byte direction) {
     Sonar *sonar = sonars[sonars_schedule_[schedule_index]];
 
     /// Compute the *priority* and update the *threshold*:
-    UByte priority = sonar->priority_compute(sonars, direction);
+    UByte priority = sonar->priority_compute(sonars, direction_);
     if (priority > threshold) {
       threshold = priority;
     }
@@ -948,7 +948,7 @@ void Sonars_Controller::poll() {
       // Now hunt for the the correct value for *last_schedule_index_*:
       for (UByte count = 0; count < 8; count++) {
 	group_advance();
-	if (group_threshold(1) >= 8) {
+	if (group_threshold() >= 8) {
 	  state_ = STATE_TRIGGER_SETUP_;
 	  break;
 	}
@@ -1103,6 +1103,23 @@ void Sonars_Controller::queue_poll(UART *host_uart,
   }
 }
 
+
+/// @brief Configure a sonar.
+/// @param sonar_index is the identifier for the sonar to be configured.
+/// @param sonar_class is one of *CLAS_FRONT*, *CLASS_BACK*, *CLASS_SIDE*,
+///        or *CLASS_OFF*.
+/// @param left_id is the sonar index for the sonar to the left.
+/// @param right_id is the sonar index for the sonar to the right.
+///
+/// This method will configure the *sonar_index*'th sonar with *sonar_class*,
+/// *left_id*, and *right_id*.  The *sonar_class* should be specified as
+/// *Sonar::CLASS_OFF* if the sonar is disabled, *Sonar::CLASS_FRONT* if
+/// the sonar is on the front of the robot, *Sonar::CLASS_BACK* if the sonar
+/// is on the back of the robot, and *Sonar::CLASS_SIDE* if the sonar is on
+/// the side of the robot.  *left_id* specify the sonar to the left and
+/// right of the *sonar_index*'th id looking out from the robot.  -1 is
+/// specified to indicate that there really is not sonar very close to the
+/// left or right.
 void Sonars_Controller::sonar_configure(UByte sonar_index,
  UByte sonar_class, Byte left_id, Byte right_id) {
   if (sonar_index < sonars_size_) {
