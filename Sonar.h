@@ -6,6 +6,13 @@
 
 #include <Bus_Slave.h>
 
+typedef enum {
+  class_off,
+  class_back,
+  class_front,
+  class_side,
+} Sonar_Class;
+
 class Sonar_Queue {
  public:
   // Methods define in Sonar.cpp:
@@ -99,8 +106,9 @@ class Sonar_Queue {
 class Sonar {
  public:
   // Public constructors and member functions:
-  Sonar(volatile uint8_t *trigger_registers, UByte trigger_mask,
-   Sonar_Queue *sonar_queue, UByte pcint_index, UByte echo_mask);
+  Sonar(UByte id, volatile uint8_t *trigger_registers, UByte trigger_mask,
+   Sonar_Queue *sonar_queue, UByte pcint_index, UByte echo_mask,
+   Sonar_Class sonar_class, Byte left_id, Byte right_id);
   Logical is_close();
   void initialize(UByte sonar_index, UShort *shared_changes_mask);
   UShort mm_distance_get();
@@ -134,7 +142,7 @@ class Sonar {
   /// right of the *sonar_index*'th id looking out from the robot.  -1 is
   /// specified to indicate that there really is not sonar very close to the
   /// left or right.
-  void configure(UByte sonar_class, Byte left_id, Byte right_id);
+  void configure(Sonar_Class sonar_class, Byte left_id, Byte right_id);
 
   /// @brief Return the echo mask.
   /// @returns the echo mask.
@@ -167,25 +175,10 @@ class Sonar {
   /// waiting for an echo pulse to finish.
   Logical is_done() {return (Logical)((state_ == STATE_OFF_) ? 1 : 0); };
 
-  /// @brief This constant is used to indicate that a sonar is disabled.
+  /// @brief Sonar identifier;
   ///
-  /// This constant is used to indicate that a sonar is disabled.
-  static const UByte CLASS_OFF = 0;
-
-  /// @brief This constant is used to indicate that a sonar is in back.
-  ///
-  /// This constant is used to indicate that a sonar is in back.
-  static const UByte CLASS_BACK = 1;
-
-  /// @brief This constant is used to indicate that a sonar is in front.
-  ///
-  /// This constant is used to indicate that a sonar is in front.
-  static const UByte CLASS_FRONT = 2;
-
-  /// @brief This constant is used to indicate that a sonar is on the side.
-  ///
-  /// This constant is used to indicate that a sonar is on the side.
-  static const UByte CLASS_SIDE = 3;
+  /// Identifier for this sonar.
+  UByte id;
 
  private:
   // Register access offsets:
@@ -229,7 +222,7 @@ class Sonar {
   UInteger queue_value_;		// Value for queue response
   Byte right_id_;			// Index of sonar on right (<0 ==> none)
   UShort *shared_changes_mask_;		// Address of shared change mask
-  UByte sonar_class_;			// Class: one of OFF/FRONT/BACK/SIDE
+  Sonar_Class sonar_class_;		// Class: one of OFF/FRONT/BACK/SIDE
   Sonar_Queue *sonar_queue_;		// Queue for sonar changes
   UShort sonar_mask_;			// 1 << sonar_index
   volatile uint8_t *trigger_registers_;	// trigger registers base
@@ -249,7 +242,7 @@ class Sonars_Controller {
   void poll();
   void queue_poll(UART *host_uart, UInteger time_base, UByte id_offset);
   void sonar_configure(UByte sonar_index,
-   UByte sonar_class, Byte left_id, Byte right_id);
+   Sonar_Class sonar_class, Byte left_id, Byte right_id);
 
   // In-line methods:
 

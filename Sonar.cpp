@@ -1,5 +1,5 @@
-// Copyright (c) 2015 by Mark Johnston.  All rights reserved.
 // Copyright (c) 2015 by Wayne Gramlich.  All rights reserved.
+// Copyright (c) 2015 by Mark Johnston.  All rights reserved.
 
 /// @file
 ///
@@ -373,27 +373,32 @@ void Sonar_Queue::shut_down() {
 /// is being used for the echo pulse.  **echo_pin** specifies which pin
 /// of the echo I/P port is connected to the echo pin.
 
-Sonar::Sonar(volatile uint8_t *trigger_registers, UByte trigger_bit,
- Sonar_Queue *sonar_queue, UByte pcint_index, UByte echo_bit) {
+Sonar::Sonar(UByte sonar_id, volatile uint8_t *trigger_registers,
+ UByte trigger_bit, Sonar_Queue *sonar_queue, UByte pcint_index,
+ UByte echo_bit, Sonar_Class sonar_class, Byte left_id, Byte right_id) {
   UByte pin_change_bit = pcint_index & 7;
-  pin_change_mask_ = (1 << pin_change_bit);
   debug_uart_ = sonar_queue->debug_uart_get();
   echo_delta_ticks_ = 0;
   echo_end_ticks_ = 0;
   echo_mask_ = (1 << echo_bit);
   echo_start_ticks_ = 0;
+  id = sonar_id;
+  left_id = left_id;
+  pin_change_mask_ = (1 << pin_change_bit);
   queue_available_ = (Logical)1;
   queue_time_ = 0;
   queue_value_ = 0;
+  right_id_ = right_id;
+  sonar_class_ = sonar_class;
   sonar_queue_ = sonar_queue;
   trigger_registers_ = trigger_registers;
   trigger_mask_ = (1 << trigger_bit);
 }
 
-void Sonar::configure(UByte sonar_class, Byte left_id, Byte right_id) {
-  sonar_class_ = sonar_class;
-  left_id_ = left_id;
-  right_id_ = right_id;
+void Sonar::configure(Sonar_Class sonar_class, Byte left_id, Byte right_id) {
+  //sonar_class_ = sonar_class;
+  //left_id_ = left_id;
+  //right_id_ = right_id;
 }
 
 /// @brief Initialize the sonar.
@@ -466,38 +471,93 @@ Logical Sonar::is_close() {
 }
 
 UByte Sonar::priority_compute(Sonar **sonars, Byte direction) {
-  Logical left_is_close = (Logical)0;
-  if (left_id_ >= 0) {
-    left_is_close = sonars[left_id_]->is_close();
+  // To enable debugging, set *debug* to 1:
+  static const Logical debug = (Logical)0;
+  if (debug) {
+    debug_uart_->string_print((Text)"[");
   }
+
+  // Compute whether *left_is_close*:
+  Logical left_is_close = (Logical)0;
+  Byte left_id = left_id_;
+  if (left_id >= 0) {
+    left_is_close = sonars[left_id]->is_close();
+  }
+
+  // Compute whether *right_is_close*:
   Logical right_is_close = (Logical)0;
-  if (right_id_ >= 0) {
-    right_is_close = sonars[right_id_]->is_close();
+  Byte right_id = right_id_;
+  if (right_id >= 0) {
+    right_is_close = sonars[right_id]->is_close();
+  }
+
+  // Debugging only:
+  if (debug) {
+    debug_uart_->integer_print((Integer)sonar_class_);
+    debug_uart_->string_print((Text)":");
+    debug_uart_->integer_print((Integer)left_id);
+    debug_uart_->string_print((Text)":");
+    debug_uart_->integer_print((Integer)right_id);
+    debug_uart_->string_print((Text)":");
   }
 
   UByte priority_delta = PRIORITY_BACKGROUND_;
-  if (direction >= 0 && sonar_class_ == CLASS_FRONT) {
-    // Robot is trending foward, turning in place, or stopped:
-    if (is_close()) {
-      priority_delta = PRIORITY_CLOSE_;
-    } else if (left_is_close || right_is_close) {
-      priority_delta = PRIORITY_NEAR_CLOSE_;
-    } else {
-      priority_delta = PRIORITY_TRAVEL_DIR_;
+  switch (sonar_class_) {
+    case class_off: {
+      // Sonar is off.  Set *priority_delta* to 0 so that this
+      // the *priority* will never leave 0.  This causes this
+      // sonar to never be sampled.
+      priority_delta = 0;
     }
-  } else if (direction < 0 && sonar_class_ == CLASS_BACK) {
-    // Robot is trending backward:
-    if (is_close()) {
-      priority_delta = PRIORITY_CLOSE_;
-    } else if (left_is_close || right_is_close) {
-      priority_delta = PRIORITY_NEAR_CLOSE_;
-    } else {
-      priority_delta = PRIORITY_TRAVEL_DIR_;
+    case class_front: {
+      // Sonar is in front:
+      if (direction >= 0) {
+	// Robot is trending foward, turning in place, or stopped:
+	if (is_close()) {
+	  priority_delta = PRIORITY_CLOSE_;
+	} else if (left_is_close || right_is_close) {
+	  priority_delta = PRIORITY_NEAR_CLOSE_;
+	} else {
+	  priority_delta = PRIORITY_TRAVEL_DIR_;
+	}
+      }
+      break;
+    }
+    case class_back: {
+      // Sonar is in back:
+      if (direction < 0) {
+	// Robot is trending backward:
+	if (is_close()) {
+	  priority_delta = PRIORITY_CLOSE_;
+	} else if (left_is_close || right_is_close) {
+	  priority_delta = PRIORITY_NEAR_CLOSE_;
+	} else {
+	  priority_delta = PRIORITY_TRAVEL_DIR_;
+	}
+      }
+      break;
+    }
+    case class_side: {
+      // Sonar is on the side:
+      if (is_close()) {
+	priority_delta = PRIORITY_TRAVEL_DIR_;
+      }
+      priority_delta = PRIORITY_BACKGROUND_;
+      break;
+    }
+    default: {
+      // It should be impossible to get here; do nothing:
+      priority_delta = 0;
+      break;
     }
   }
 
   // Incrment *priority*:
   priority_ += priority_delta;
+  if (debug) {
+    debug_uart_->integer_print((Integer)priority_);
+    debug_uart_->string_print((Text)"]");
+  }
   return priority_;
 }
 
@@ -731,6 +791,8 @@ Sonars_Controller::Sonars_Controller(UART *debug_uart,
   last_schedule_index_ = sonars_schedule_size_;
   first_schedule_index_ = 0;
 
+  direction_ = 1;
+
   //debug_uart->string_print((Text)"<=Sonars_Controller()!\r\n");
 }
 
@@ -762,6 +824,12 @@ void Sonars_Controller::group_advance() {
 /// is trending forward, negative if the robot is trending backwards,
 /// zero if the robot is turning place or stopped.
 UByte Sonars_Controller::group_threshold() {
+  // To enable debugging, set *debug* to 1:
+  static const Logical debug = (Logical)0;
+  if (debug) {
+    debug_uart_->string_print((Text)"<");
+  }
+
   /// Visit each *sonar* in the group:
   UByte threshold = 0;
   Sonar **sonars = sonars_;
@@ -769,11 +837,27 @@ UByte Sonars_Controller::group_threshold() {
    schedule_index <= last_schedule_index_; schedule_index++) {
     Sonar *sonar = sonars[sonars_schedule_[schedule_index]];
 
-    /// Compute the *priority* and update the *threshold*:
+    // Compute the *priority* and update the *threshold*:
     UByte priority = sonar->priority_compute(sonars, direction_);
     if (priority > threshold) {
       threshold = priority;
     }
+
+    // For debugging only:
+    if (debug) {
+      debug_uart_->string_print((Text)"(");
+      debug_uart_->integer_print((Integer)sonar->id);
+      debug_uart_->string_print((Text)":");
+      debug_uart_->integer_print((Integer)priority);
+      debug_uart_->string_print((Text)")^");
+    }
+  }
+
+  // For debugging only:
+  if (debug) {
+    debug_uart_->string_print((Text)"=");
+    debug_uart_->integer_print((Integer)threshold);
+    debug_uart_->string_print((Text)">");
   }
   return threshold;
 }
@@ -948,16 +1032,30 @@ void Sonars_Controller::poll() {
       // Now hunt for the the correct value for *last_schedule_index_*:
       for (UByte count = 0; count < 8; count++) {
 	group_advance();
-	if (group_threshold() >= 8) {
+	UByte threshold = group_threshold();
+
+	// To enable debugging, set *debug* to 1:
+	static const Logical debug = (Logical)0;
+	if (debug) {
+	  Sonar *sonar = sonars_[sonars_schedule_[first_schedule_index_]];
+	  debug_uart_->string_print((Text)" ");
+	  debug_uart_->integer_print((Integer)sonar->id);
+	  debug_uart_->string_print((Text)":");
+	  debug_uart_->integer_print((Integer)threshold);
+	}
+
+	// See if this group has exceeded threshold:
+	if (threshold >= 8) {
+	  // This sonar group exceed threshold; we'll do it next:
+	  group_priorities_reset();
 	  state_ = STATE_TRIGGER_SETUP_;
+	  if (debug) {
+	    debug_uart_->string_print((Text)"!\r\n");
+	  }
 	  break;
 	}
       }
 
-      // Next, do the prework for the set of sonar triggers:
-      //state_ = STATE_TRIGGER_SETUP_;
-
-      //debug_uart_->integer_print(first_schedule_index_);
       break;
     }
     case STATE_TRIGGER_SETUP_: {
@@ -1121,7 +1219,7 @@ void Sonars_Controller::queue_poll(UART *host_uart,
 /// specified to indicate that there really is not sonar very close to the
 /// left or right.
 void Sonars_Controller::sonar_configure(UByte sonar_index,
- UByte sonar_class, Byte left_id, Byte right_id) {
+ Sonar_Class sonar_class, Byte left_id, Byte right_id) {
   if (sonar_index < sonars_size_) {
     Sonar *sonar = sonars_[sonar_index];
     sonar->configure(sonar_class, left_id, right_id);
